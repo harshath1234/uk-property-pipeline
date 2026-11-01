@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -92,6 +93,9 @@ def stage_dbt(settings: Settings, args: list[str] | None = None) -> None:
     for cmd in (["seed"], ["build", *extra]):
         log(LOG, "dbt", command=" ".join(cmd))
         subprocess.run([*base, *cmd, *common], check=True, env=dbt_env(settings))
+    results = dbt_dir / "target" / "run_results.json"
+    if results.exists():  # keep test results with the run's other reports
+        shutil.copyfile(results, _reports_dir(settings) / "dbt_run_results.json")
 
 
 def stage_postgres(settings: Settings) -> None:

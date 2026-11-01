@@ -52,7 +52,7 @@ def main() -> None:
         "ge_success": quality["success"],
         "stage_seconds": timings,
     }
-    manifest_path = Path("dbt/target/run_results.json")
+    manifest_path = reports / "dbt_run_results.json"
     if manifest_path.exists():
         rr = json.loads(manifest_path.read_text())["results"]
         results["dbt_tests_passed"] = sum(
@@ -70,7 +70,7 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001
         results["postgres"] = f"not reachable: {exc.__class__.__name__}"
 
-    out = Path("reports")
+    out = Path(os.environ.get("PPD_PROJECT_ROOT", ".")) / "reports"
     out.mkdir(exist_ok=True)
     (out / "results.json").write_text(json.dumps(results, indent=2, default=str))
     print(json.dumps(results, indent=2, default=str))

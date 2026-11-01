@@ -23,6 +23,8 @@ COPY postgres ./postgres
 COPY site ./site
 COPY tests/fixtures ./tests/fixtures
 COPY scripts ./scripts
+COPY sql ./sql
+RUN mkdir -p /app/reports
 
 # run as a non-root user
 RUN useradd --create-home --uid 1000 ppd && chown -R ppd /app

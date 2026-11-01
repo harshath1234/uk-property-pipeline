@@ -43,6 +43,8 @@ services:
     volumes:
       - ./data:/app/data      # landing / bronze / silver / warehouse persist on your disk
       - ./site:/app/site      # dashboard output
+      - ./reports:/app/reports        # results.json from scripts/summarise_run.py
+      - ./sql/plans:/app/sql/plans    # EXPLAIN ANALYZE output
 
   airflow:
     profiles: ["airflow"]
