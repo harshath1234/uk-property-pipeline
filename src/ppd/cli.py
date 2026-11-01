@@ -5,6 +5,7 @@ Stages, in order:
   validate    pandera checks on every landed file
   transform   Spark: landing -> bronze -> silver
   quality     Great Expectations suite on silver
+  bigquery    load silver into BigQuery (only when the target is bigquery)
   dbt         dbt seed + build (models and tests) on the configured target
   postgres    apply migrations and load the normalised PostgreSQL model
   site        export dashboard data from the marts into site/data/
@@ -63,6 +64,16 @@ def stage_quality(settings: Settings) -> None:
     quality.run(settings)
 
 
+def stage_bigquery(settings: Settings) -> None:
+    """Load silver into BigQuery. No-op unless the warehouse target is bigquery."""
+    if os.environ.get("PPD_DBT_TARGET", settings.raw["warehouse"]["target"]) != "bigquery":
+        log(LOG, "warehouse target is not bigquery; skipping load")
+        return
+    from ppd import cloud
+
+    cloud.load_silver_to_bigquery(settings)
+
+
 def dbt_env(settings: Settings) -> dict[str, str]:
     env = dict(os.environ)
     env.setdefault("PPD_DBT_TARGET", settings.raw["warehouse"]["target"])
@@ -75,7 +86,10 @@ def stage_dbt(settings: Settings, args: list[str] | None = None) -> None:
     dbt_dir = PROJECT_ROOT / "dbt"
     base = ["dbt", "--no-use-colors"]
     common = ["--project-dir", str(dbt_dir), "--profiles-dir", str(dbt_dir)]
-    for cmd in (["seed"], ["build", *(args or [])]):
+    extra = list(args or [])
+    if os.environ.get("PPD_BQ_SANDBOX", "").lower() in {"1", "true", "yes"}:
+        extra += ["--vars", "{incremental: false}"]  # sandbox has no MERGE/DELETE
+    for cmd in (["seed"], ["build", *extra]):
         log(LOG, "dbt", command=" ".join(cmd))
         subprocess.run([*base, *cmd, *common], check=True, env=dbt_env(settings))
 
@@ -92,16 +106,33 @@ def stage_site(settings: Settings) -> None:
     export_site.run(settings)
 
 
+def stage_ons(settings: Settings, path: str, sheet: str | None) -> None:
+    """Parse an ONS HPSSA workbook and reconcile it with the warehouse medians."""
+    from ppd import ons_excel
+
+    df = ons_excel.parse_workbook(Path(path), sheet_hint=sheet)
+    out = settings.path("data_root") / "external"
+    out.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out / "ons_hpssa.parquet", index=False)
+    rec = ons_excel.reconcile_with_warehouse(df, settings.path("warehouse"))
+    rec.to_csv(_reports_dir(settings) / "ons_reconciliation.csv", index=False)
+    log(LOG, "ons reconciliation", matched_district_years=len(rec),
+        median_abs_pct_diff=None if rec.empty else round(float(rec["pct_diff"].abs().median()), 4))
+
+
 STAGES = {
     "ingest": stage_ingest,
     "validate": stage_validate,
     "transform": stage_transform,
     "quality": stage_quality,
+    "bigquery": stage_bigquery,
     "dbt": stage_dbt,
     "postgres": stage_postgres,
     "site": stage_site,
 }
-DEFAULT_RUN = ["ingest", "validate", "transform", "quality", "dbt", "postgres", "site"]
+DEFAULT_RUN = [
+    "ingest", "validate", "transform", "quality", "bigquery", "dbt", "postgres", "site",
+]
 
 
 def run_all(settings: Settings, from_dir: str | None, skip: list[str]) -> None:
@@ -127,10 +158,13 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_ing = sub.add_parser("ingest")
     p_ing.add_argument("--from-dir", help="copy local files instead of downloading")
-    for name in ("validate", "transform", "quality", "postgres", "site"):
+    for name in ("validate", "transform", "quality", "bigquery", "postgres", "site"):
         sub.add_parser(name)
     p_dbt = sub.add_parser("dbt")
     p_dbt.add_argument("dbt_args", nargs=argparse.REMAINDER)
+    p_ons = sub.add_parser("ons", help="parse an ONS house-price workbook and reconcile")
+    p_ons.add_argument("path")
+    p_ons.add_argument("--sheet", help="substring of the sheet name, e.g. 2a")
     p_all = sub.add_parser("run-all")
     p_all.add_argument("--from-dir")
     p_all.add_argument("--skip", default="", help="comma-separated stages to skip")
@@ -142,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
             stage_ingest(settings, a.from_dir)
         elif a.cmd == "dbt":
             stage_dbt(settings, a.dbt_args)
+        elif a.cmd == "ons":
+            stage_ons(settings, a.path, a.sheet)
         elif a.cmd == "run-all":
             run_all(settings, a.from_dir, [s for s in a.skip.split(",") if s])
         else:

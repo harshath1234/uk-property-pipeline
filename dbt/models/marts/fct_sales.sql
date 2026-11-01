@@ -1,6 +1,6 @@
 {{
   config(
-    materialized = 'incremental',
+    materialized = 'incremental' if var('incremental', true) else 'table',
     unique_key = 'transaction_id',
     incremental_strategy = 'merge' if target.type == 'bigquery' else 'delete+insert',
     on_schema_change = 'fail',
