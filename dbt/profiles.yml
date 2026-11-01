@@ -1,0 +1,17 @@
+ppd:
+  target: "{{ env_var('PPD_DBT_TARGET', 'duckdb') }}"
+  outputs:
+    duckdb:
+      type: duckdb
+      path: "{{ env_var('PPD_DUCKDB_PATH', '../data/warehouse.duckdb') }}"
+      threads: 4
+    bigquery:
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"
+      project: "{{ env_var('PPD_GCP_PROJECT', '') }}"
+      dataset: ppd
+      location: "{{ env_var('PPD_GCP_LOCATION', 'europe-west2') }}"
+      threads: 4
+      priority: interactive
+      maximum_bytes_billed: 5000000000  # 5 GB guard so a bad query can't run up costs

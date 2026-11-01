@@ -1,0 +1,30 @@
+name: ppd
+version: "0.1.0"
+config-version: 2
+profile: ppd
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  ppd:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts
+      reporting:
+        +schema: reporting
+
+seeds:
+  ppd:
+    +schema: reference
+
+flags:
+  send_anonymous_usage_stats: false

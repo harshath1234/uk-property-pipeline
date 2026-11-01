@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: fct_sales
+    description: Fact table, one row per current residential sale (England and Wales).
+    columns:
+      - name: transaction_id
+        description: HM Land Registry transaction unique identifier.
+        data_tests: [unique, not_null]
+      - name: date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: location_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_location')
+                field: location_key
+      - name: property_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_property')
+                field: property_key
+      - name: price_gbp
+        description: Sale price in pounds sterling as stated on the transfer deed.
+        data_tests: [not_null, positive_value]
+
+  - name: dim_date
+    description: Calendar dimension, one row per day between the first and last sale.
+    columns:
+      - name: date_key
+        data_tests: [unique, not_null]
+
+  - name: dim_location
+    description: Local authority district and county.
+    columns:
+      - name: location_key
+        data_tests: [unique, not_null]
+
+  - name: dim_property
+    description: Property type x tenure x new-build combinations.
+    columns:
+      - name: property_key
+        data_tests: [unique, not_null]
+
+  - name: rpt_monthly_prices
+    description: Dashboard extract. Monthly volume and median price by property type (category A sales).
+  - name: rpt_district_annual
+    description: Dashboard extract. District-level annual median price with year-on-year change.

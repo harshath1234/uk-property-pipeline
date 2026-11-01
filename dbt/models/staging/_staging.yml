@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: stg_transactions
+    description: Typed, renamed view over the silver layer. Addresses below street level are dropped here.
+    columns:
+      - name: transaction_id
+        data_tests: [unique, not_null]
+      - name: price_gbp
+        data_tests:
+          - not_null
+          - positive_value
+      - name: property_type_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["D", "S", "T", "F", "O"]
+      - name: tenure_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["F", "L", "U"]
+      - name: ppd_category_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["A", "B"]

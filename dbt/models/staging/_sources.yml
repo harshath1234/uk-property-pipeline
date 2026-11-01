@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Current state of every Price Paid transaction, written by the Spark job
+      (src/ppd/spark_transform.py). Locally this is Parquet read in place by
+      DuckDB; in the cloud it is the BigQuery table ppd_raw.silver_transactions.
+    schema: "{{ 'ppd_raw' if target.type == 'bigquery' else 'main' }}"
+    tables:
+      - name: silver_transactions
+        meta:
+          external_location: "read_parquet('{{ env_var('PPD_SILVER_GLOB', '../data/silver/**/*.parquet') }}', hive_partitioning = true)"
+        columns:
+          - name: transaction_id
+            data_tests: [unique, not_null]
