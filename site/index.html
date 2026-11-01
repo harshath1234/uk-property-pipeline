@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UK House Prices Pipeline</title>
+<meta name="description" content="Dashboard built from an end-to-end data pipeline over HM Land Registry Price Paid Data: Spark, dbt, PostgreSQL, Airflow, BigQuery.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f3ef; --surface-1: #fcfcfb; --border: #e2e0d8;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77756f;
+    --grid: #e7e5de; --accent: #2a78d6;
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+    --warn-bg: #fff4d6; --warn-ink: #6b4a00; --good: #008300; --bad: #c62b2b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2a;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
+      --grid: #2a2927; --accent: #3987e5;
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+      --warn-bg: #3a2d08; --warn-ink: #f5d58a; --good: #4cb84c; --bad: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2a;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
+    --grid: #2a2927; --accent: #3987e5;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    --warn-bg: #3a2d08; --warn-ink: #f5d58a; --good: #4cb84c; --bad: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--text-secondary); }
+  a { color: var(--accent); }
+  .banner { margin: 16px 0 0; padding: 10px 14px; border-radius: 8px;
+            background: var(--warn-bg); color: var(--warn-ink); font-weight: 600; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+          gap: 12px; margin: 20px 0; }
+  .card { background: var(--surface-1); border: 1px solid var(--border);
+          border-radius: 10px; padding: 16px; }
+  .kpi .label { color: var(--text-secondary); font-size: 13px; }
+  .kpi .value { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpi .sub { color: var(--text-muted); font-size: 12px; }
+  h2 { font-size: 17px; margin: 0 0 2px; }
+  .note { color: var(--text-muted); font-size: 13px; margin: 0 0 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (min-width: 900px) { .grid2 { grid-template-columns: 3fr 2fr; } }
+  .chart-box { position: relative; height: 320px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  select, button { font: inherit; padding: 4px 8px; border-radius: 6px;
+                   border: 1px solid var(--border); background: var(--surface-1);
+                   color: var(--text-primary); }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px;
+          font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--text-secondary); font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px;
+          border: 1px solid var(--border); }
+  .pass { color: var(--good); } .fail { color: var(--bad); }
+  footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
+  .arch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+  .arch span.step { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+                    background: var(--surface-0); }
+  .arch span.arrow { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>UK House Prices: Data Pipeline Dashboard</h1>
+    <p>Every figure below is produced by the pipeline in
+      <a href="https://github.com/harshath1234/uk-property-pipeline">this repository</a>
+      from <span id="dataset-label">HM Land Registry Price Paid Data</span>.</p>
+    <div id="synthetic-banner" class="banner" hidden>
+      Synthetic test data: this page was built from the repo's random test fixture, not real sales.
+      Run <code>make run</code> on the real files to publish real figures.
+    </div>
+  </header>
+
+  <section class="kpis" id="kpis" aria-label="Headline figures"></section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Median sale price by property type</h2>
+      <p class="note">Monthly median, standard-price sales (category A), England and Wales.</p>
+      <div class="chart-box"><canvas id="monthly-chart" role="img"
+        aria-label="Line chart of monthly median price by property type"></canvas></div>
+      <details><summary>Show as table</summary><div class="table-wrap" id="monthly-table"></div></details>
+    </section>
+    <section class="card">
+      <h2>Highest-priced districts</h2>
+      <div class="controls">
+        <label for="year-select" class="note" style="margin:0">Year</label>
+        <select id="year-select"></select>
+      </div>
+      <div class="chart-box"><canvas id="district-chart" role="img"
+        aria-label="Bar chart of the ten districts with the highest median price"></canvas></div>
+      <details><summary>Show as table</summary><div class="table-wrap" id="district-table"></div></details>
+    </section>
+  </div>
+
+  <section class="card" style="margin-bottom:12px">
+    <h2>Pipeline</h2>
+    <p class="note">How these numbers were produced.</p>
+    <div class="arch">
+      <span class="step">HM Land Registry CSV</span><span class="arrow">→</span>
+      <span class="step">Ingest (checksums, retries)</span><span class="arrow">→</span>
+      <span class="step">Spark bronze / silver</span><span class="arrow">→</span>
+      <span class="step">Great Expectations</span><span class="arrow">→</span>
+      <span class="step">dbt star schema (DuckDB / BigQuery)</span><span class="arrow">→</span>
+      <span class="step">PostgreSQL 3NF</span><span class="arrow">→</span>
+      <span class="step">This page</span>
+    </div>
+    <p class="note" style="margin-top:10px">Orchestrated monthly by Airflow; CI on GitHub Actions; GCP resources in Terraform.</p>
+  </section>
+
+  <section class="card">
+    <h2>Last run</h2>
+    <p class="note" id="run-meta"></p>
+    <div class="table-wrap" id="files-table"></div>
+  </section>
+
+  <footer>
+    Contains HM Land Registry data © Crown copyright and database right. Licensed under the
+    Open Government Licence v3.0. Aggregates only; no addresses are published here.
+  </footer>
+</main>
+
+<script>
+(async function () {
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 });
+  const num = new Intl.NumberFormat("en-GB");
+  const pct = (x) => (x == null ? "–" : (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%");
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  let data;
+  try {
+    const res = await fetch("data/dashboard.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    data = await res.json();
+  } catch (e) {
+    document.getElementById("kpis").innerHTML =
+      '<div class="card">No data yet. Run the pipeline (<code>make run</code>) to generate <code>site/data/dashboard.json</code>.</div>';
+    return;
+  }
+
+  const meta = data.meta;
+  document.getElementById("dataset-label").textContent = meta.dataset_label;
+  document.getElementById("synthetic-banner").hidden = !meta.synthetic_fixture;
+
+  // ---- KPI tiles
+  const k = data.kpis[0];
+  const monthly = data.monthly;
+  const months = [...new Set(monthly.map((r) => r.month))].sort();
+  const lastMonth = months[months.length - 1];
+  const lastRows = monthly.filter((r) => r.month === lastMonth);
+  const lastSales = lastRows.reduce((s, r) => s + r.sales, 0);
+  const q = meta.quality;
+  const tiles = [
+    ["Sales in warehouse", num.format(k.sales), `${k.first_sale} to ${k.last_sale}`],
+    ["Districts", num.format(k.districts), "local authority districts"],
+    [`Sales in ${lastMonth.slice(0, 7)}`, num.format(lastSales), "latest month; still filling in"],
+    ["Data quality", q ? (q.success ? "Passed" : "Failed") : "–",
+      q ? `${q.expectations_per_partition} checks × ${q.partitions} year partitions` : "not run"],
+  ];
+  document.getElementById("kpis").innerHTML = tiles.map(([l, v, s]) =>
+    `<div class="card kpi"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(s)}</div></div>`
+  ).join("");
+
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.color = css("--text-secondary");
+  Chart.defaults.borderColor = css("--grid");
+
+  // ---- Monthly median by type (fixed slot order = fixed colour per type)
+  const TYPES = ["Detached", "Semi-detached", "Terraced", "Flat/maisonette"];
+  const COLORS = ["--series-1", "--series-2", "--series-3", "--series-4"].map(css);
+  const byKey = new Map(monthly.map((r) => [r.month + "|" + r.property_type, r]));
+  new Chart(document.getElementById("monthly-chart"), {
+    type: "line",
+    data: {
+      labels: months.map((m) => m.slice(0, 7)),
+      datasets: TYPES.map((t, i) => ({
+        label: t,
+        data: months.map((m) => byKey.get(m + "|" + t)?.median_price_gbp ?? null),
+        borderColor: COLORS[i], backgroundColor: COLORS[i],
+        borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.2, spanGaps: true,
+      })),
+    },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "top", align: "start", labels: { usePointStyle: true, boxWidth: 8 } },
+        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.raw == null ? "–" : gbp.format(c.raw)}` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+        y: { ticks: { callback: (v) => "£" + v / 1000 + "k" } },
+      },
+    },
+  });
+  document.getElementById("monthly-table").innerHTML =
+    "<table><thead><tr><th>Month</th><th>Type</th><th class=num>Sales</th><th class=num>Median</th></tr></thead><tbody>" +
+    monthly.filter((r) => TYPES.includes(r.property_type)).slice(-48).reverse().map((r) =>
+      `<tr><td>${esc(r.month.slice(0, 7))}</td><td>${esc(r.property_type)}</td><td class=num>${num.format(r.sales)}</td><td class=num>${gbp.format(r.median_price_gbp)}</td></tr>`
+    ).join("") + "</tbody></table>";
+
+  // ---- Districts: top 10 by median for the chosen year (single series, one hue)
+  const years = [...new Set(data.districts.map((r) => r.year))].sort();
+  const sel = document.getElementById("year-select");
+  sel.innerHTML = years.map((y) => `<option>${y}</option>`).join("");
+  // default to the last COMPLETE year when the latest one is partial
+  sel.value = years.length > 1 ? years[years.length - 2] : years[0];
+  let districtChart;
+  function drawDistricts() {
+    const y = Number(sel.value);
+    const rows = data.districts.filter((r) => r.year === y)
+      .sort((a, b) => b.median_price_gbp - a.median_price_gbp).slice(0, 10);
+    const cfg = {
+      type: "bar",
+      data: {
+        labels: rows.map((r) => r.district),
+        datasets: [{ label: "Median price", data: rows.map((r) => r.median_price_gbp),
+          backgroundColor: css("--series-1"), borderRadius: 4, borderSkipped: "start", barPercentage: 0.7 }],
+      },
+      options: {
+        indexAxis: "y", maintainAspectRatio: false,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: (c) => ` ${gbp.format(c.raw)} · ${num.format(rows[c.dataIndex].sales)} sales · YoY ${pct(rows[c.dataIndex].median_yoy_change)}` } } },
+        scales: { x: { ticks: { callback: (v) => "£" + v / 1000 + "k" } }, y: { grid: { display: false } } },
+      },
+    };
+    if (districtChart) districtChart.destroy();
+    districtChart = new Chart(document.getElementById("district-chart"), cfg);
+    document.getElementById("district-table").innerHTML =
+      "<table><thead><tr><th>District</th><th class=num>Sales</th><th class=num>Median</th><th class=num>YoY</th></tr></thead><tbody>" +
+      rows.map((r) => `<tr><td>${esc(r.district)}</td><td class=num>${num.format(r.sales)}</td><td class=num>${gbp.format(r.median_price_gbp)}</td><td class=num>${pct(r.median_yoy_change)}</td></tr>`).join("") +
+      "</tbody></table>";
+  }
+  sel.addEventListener("change", drawDistricts);
+  drawDistricts();
+
+  // ---- Run metadata
+  document.getElementById("run-meta").textContent =
+    `Generated ${meta.generated_at} · data quality ${q ? (q.success ? "passed" : "FAILED") : "not run"}` +
+    (q ? ` on ${num.format(q.rows_validated)} rows` : "");
+  document.getElementById("files-table").innerHTML =
+    "<table><thead><tr><th>Source file</th><th>Kind</th><th class=num>Size</th><th>SHA-256</th><th>Landed</th></tr></thead><tbody>" +
+    meta.source_files.map((f) => `<tr><td>${esc(f.name)}</td><td>${esc(f.kind)}</td><td class=num>${(f.bytes / 1e6).toFixed(1)} MB</td><td><code>${esc(f.sha256)}</code></td><td>${esc(f.landed_at)}</td></tr>`).join("") +
+    "</tbody></table>";
+})();
+</script>
+</body>
+</html>

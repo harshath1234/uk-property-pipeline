@@ -22,4 +22,5 @@ D (delete), keyed on the transaction unique identifier.
 
 ## Consequences
 - Running the whole pipeline twice in a row produces the same row counts.
-  A test checks this (`tests/test_idempotency.py`).
+  Tests check this: `tests/test_spark.py::test_rerun_is_idempotent`,
+  `tests/test_ingest.py` and `tests/test_postgres.py`.

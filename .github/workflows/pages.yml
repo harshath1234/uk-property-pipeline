@@ -1,0 +1,44 @@
+name: Deploy dashboard
+
+# Publishes site/ to GitHub Pages whenever it changes on main.
+# site/data/dashboard.json is produced by a real local run (`make run`) and
+# committed; this workflow refuses to publish synthetic fixture data.
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse synthetic or missing data
+        run: |
+          python - <<'EOF'
+          import json, sys
+          d = json.load(open("site/data/dashboard.json"))
+          if d["meta"]["synthetic_fixture"]:
+              sys.exit("site/data/dashboard.json was built from the synthetic fixture; run `make run` on real data first")
+          print("publishing data generated", d["meta"]["generated_at"])
+          EOF
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
