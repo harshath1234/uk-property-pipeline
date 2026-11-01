@@ -1,0 +1,68 @@
+# One command runs everything:   docker compose up --build
+# Offline / quick demo on the synthetic fixture:
+#   PPD_RUN_ARGS="--from-dir tests/fixtures/ppd" docker compose up --build
+# Airflow UI on http://localhost:8080 (user/password printed in its log):
+#   docker compose --profile airflow up --build
+
+name: ppd
+
+x-ppd-env: &ppd-env
+  PPD_PG_DSN: postgresql://ppd:ppd@postgres:5432/ppd
+  PPD_SPARK_DRIVER_MEMORY: ${PPD_SPARK_DRIVER_MEMORY:-4g}
+  PPD_SOURCE_YEARS: ${PPD_SOURCE_YEARS:-2018,2019,2020,2021,2022,2023,2024,2025,2026}
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ppd
+      POSTGRES_PASSWORD: ppd
+      POSTGRES_DB: ppd
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-airflow-db.sql:/docker-entrypoint-initdb.d/init-airflow-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ppd"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *ppd-env
+    entrypoint: ["sh", "-c", "ppd run-all $${PPD_RUN_ARGS:-}"]
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data      # landing / bronze / silver / warehouse persist on your disk
+      - ./site:/app/site      # dashboard output
+
+  airflow:
+    profiles: ["airflow"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: standalone
+    environment:
+      <<: *ppd-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    ports: ["8080:8080"]
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./data:/opt/ppd/data
+      - ./site:/opt/ppd/site
+
+volumes:
+  pgdata:

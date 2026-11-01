@@ -32,7 +32,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install
-        run: pip install -e ".[dev,dbt]"
+        run: pip install -e ".[dev,dbt,quality]"
       - name: Lint
         run: ruff check src tests airflow
       - name: Unit and integration tests (fixture data)
@@ -46,3 +46,31 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build pipeline image
         run: docker build -f docker/Dockerfile -t ppd-pipeline:ci .
+
+  dag-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Airflow and the pipeline
+        run: pip install "apache-airflow==3.3.2" -e ".[dev]"
+      - name: DAG integrity tests
+        env:
+          AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+        run: |
+          airflow db migrate
+          pytest tests/test_dag.py
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate

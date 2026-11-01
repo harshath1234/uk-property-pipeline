@@ -1,0 +1,21 @@
+# Airflow image with Java (for Spark) and the ppd package installed.
+FROM apache/airflow:3.3.2-python3.12
+
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openjdk-17-jre-headless \
+ && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+USER airflow
+COPY --chown=airflow pyproject.toml README.md /opt/ppd/
+COPY --chown=airflow src /opt/ppd/src
+RUN pip install --no-cache-dir "/opt/ppd[dbt,quality]"
+
+COPY --chown=airflow config /opt/ppd/config
+COPY --chown=airflow dbt /opt/ppd/dbt
+COPY --chown=airflow postgres /opt/ppd/postgres
+COPY --chown=airflow site /opt/ppd/site
+ENV PPD_ROOT=/opt/ppd \
+    PPD_CONFIG=/opt/ppd/config/pipeline.yaml \
+    PPD_PROJECT_ROOT=/opt/ppd

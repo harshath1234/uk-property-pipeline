@@ -4,11 +4,14 @@
 source:
   base_url: "https://price-paid-data.publicdata.landregistry.gov.uk"
   # Yearly files to backfill. 2018 onwards keeps the first run laptop-sized
-  # (roughly 1 GB of CSV); widen the range if you have the disk and time.
+  # (a little over 1 GB of CSV); widen the range if you have the disk and time.
   years: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   monthly_update_file: "pp-monthly-update-new-version.csv"
   timeout_seconds: 120
   max_retries: 4
+  # Copy files from this local folder instead of downloading (offline runs,
+  # CI, demos on the synthetic fixture). Empty = download.
+  from_dir: ""
 
 paths:
   data_root: "data"            # git-ignored
@@ -25,6 +28,11 @@ storage:
 
 warehouse:
   target: "duckdb"             # dbt target: "duckdb" or "bigquery"
+
+cloud:
+  # Years loaded to BigQuery. The free sandbox caps lifetime storage at 10 GiB,
+  # so keep this short there; leave empty to load every year (billing enabled).
+  years: [2024, 2025, 2026]
 
 postgres:
   dsn: "postgresql://ppd:ppd@localhost:5432/ppd"

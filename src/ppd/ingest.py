@@ -22,7 +22,7 @@ from pathlib import Path
 
 import requests
 
-from ppd.config import Settings
+from ppd.config import PROJECT_ROOT, Settings
 from ppd.logging_utils import get_logger, log
 
 LOG = get_logger("ppd.ingest")
@@ -179,6 +179,10 @@ def run(settings: Settings, from_dir: Path | None = None) -> dict[str, str]:
     (used for offline runs, CI and tests)."""
     manifest = Manifest(settings.path("manifest"))
     results: dict[str, str] = {}
+    if from_dir is None and settings.source.get("from_dir"):
+        from_dir = Path(settings.source["from_dir"])
+        if not from_dir.is_absolute():
+            from_dir = PROJECT_ROOT / from_dir
     if from_dir:
         for f in sorted(Path(from_dir).glob("pp-*.csv")):
             kind = "monthly" if "monthly" in f.name else "yearly"

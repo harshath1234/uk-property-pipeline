@@ -13,7 +13,19 @@ from typing import Any
 
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+def _project_root() -> Path:
+    """Repo root: PPD_PROJECT_ROOT, else the source checkout, else the cwd
+    (when the package is pip-installed into an image, e.g. Docker)."""
+    if os.environ.get("PPD_PROJECT_ROOT"):
+        return Path(os.environ["PPD_PROJECT_ROOT"])
+    checkout = Path(__file__).resolve().parents[2]
+    if (checkout / "config" / "pipeline.yaml").exists():
+        return checkout
+    return Path.cwd()
+
+
+PROJECT_ROOT = _project_root()
 DEFAULT_CONFIG = PROJECT_ROOT / "config" / "pipeline.yaml"
 
 
