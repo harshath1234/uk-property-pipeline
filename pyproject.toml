@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ppd"
+version = "0.1.0"
+description = "UK house-price data pipeline: HM Land Registry Price Paid Data -> Spark -> dbt star schema -> dashboard"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Harshath Udayakumar" }]
+dependencies = [
+  "requests>=2.31",
+  "pyyaml>=6.0",
+  "pandas>=2.2",
+  "pyarrow>=15",
+  "pandera>=0.20",
+  "duckdb>=1.1",
+  "pyspark>=3.5",
+  "openpyxl>=3.1",
+  "psycopg[binary]>=3.1",
+]
+
+[project.optional-dependencies]
+dbt = ["dbt-duckdb>=1.8"]
+gcp = ["google-cloud-storage>=2.16", "dbt-bigquery>=1.8"]
+quality = ["great_expectations>=1.0"]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+ppd = "ppd.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "spark: tests that start a local Spark session (slower)",
+  "postgres: tests that need a running PostgreSQL (set PPD_PG_DSN)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

@@ -1,0 +1,30 @@
+# Pipeline configuration. Every value can be overridden with an environment
+# variable named PPD_<SECTION>_<KEY>, e.g. PPD_SOURCE_YEARS="2024,2025".
+
+source:
+  base_url: "https://price-paid-data.publicdata.landregistry.gov.uk"
+  # Yearly files to backfill. 2018 onwards keeps the first run laptop-sized
+  # (roughly 1 GB of CSV); widen the range if you have the disk and time.
+  years: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
+  monthly_update_file: "pp-monthly-update-new-version.csv"
+  timeout_seconds: 120
+  max_retries: 4
+
+paths:
+  data_root: "data"            # git-ignored
+  landing: "data/landing"      # raw files exactly as downloaded
+  bronze: "data/bronze"        # typed Parquet, one folder per source file
+  silver: "data/silver"        # current state of every transaction (Parquet)
+  manifest: "data/landing/_manifest.json"
+  warehouse: "data/warehouse.duckdb"
+
+storage:
+  backend: "local"             # "local" or "gcs"
+  gcs_bucket: ""               # set by Terraform output when backend = gcs
+  gcs_prefix: "ppd"
+
+warehouse:
+  target: "duckdb"             # dbt target: "duckdb" or "bigquery"
+
+postgres:
+  dsn: "postgresql://ppd:ppd@localhost:5432/ppd"
