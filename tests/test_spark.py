@@ -64,3 +64,26 @@ def test_bad_rows_are_quarantined(spark, settings, fixture_dir, tmp_path):
     written = build_bronze(spark, settings)
     assert written["pp-2024.csv"] == len(rows) - 1
     assert (settings.path("data_root") / "quarantine").exists()
+
+
+def test_monthly_rows_for_unloaded_years_are_dropped(spark, settings, fixture_dir, tmp_path):
+    """The real monthly file carries late registrations back to 1995. Years
+    with no yearly snapshot must not leak into silver as tiny partitions."""
+    src = tmp_path / "src"
+    src.mkdir()
+    for y in (2023, 2024, 2025):
+        (src / f"pp-{y}.csv").write_bytes((fixture_dir / f"pp-{y}.csv").read_bytes())
+    monthly = _rows(fixture_dir / "pp-monthly-update-new-version.csv")
+    old = list(monthly[0])
+    old[0] = "{11111111-2222-3333-4444-555555555555}"
+    old[2] = "1996-05-01 00:00"
+    old[15] = "A"
+    with open(src / "pp-monthly-update-new-version.csv", "w", newline="") as fh:
+        csv.writer(fh, quoting=csv.QUOTE_ALL).writerows([*monthly, old])
+
+    ingest.run(settings, from_dir=src)
+    build_bronze(spark, settings)
+    build_silver(spark, settings)
+    silver = spark.read.parquet(str(settings.path("silver")))
+    years = {r.sale_year for r in silver.select("sale_year").distinct().collect()}
+    assert years == {2023, 2024, 2025}

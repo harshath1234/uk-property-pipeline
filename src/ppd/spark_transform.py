@@ -6,7 +6,8 @@ quarantine folder instead of being silently dropped.
 
 Silver: the current state of every transaction, built by merge (ADR 0002):
 1. Use only the latest landed version of each yearly file (a yearly file is
-   a full snapshot of that year).
+   a full snapshot of that year), and only years that have one: monthly
+   rows for older years are dropped.
 2. Keep a monthly change row only if it is newer than the snapshot of its
    year; otherwise the snapshot already reflects it.
 3. Latest row per transaction_id wins (by load sequence, then D > C > A).
@@ -137,6 +138,16 @@ def build_silver(spark: SparkSession, settings: Settings) -> int:
         "snap_year int, snap_seq int",
     )
     rows = rows.join(F.broadcast(snap), rows.sale_year == snap.snap_year, "left")
+
+    # Rule 1b: only keep years we hold a full yearly snapshot for. The monthly
+    # file also carries late registrations and corrections for old years
+    # (back to 1995); without that year's snapshot they would form tiny,
+    # unrepresentative partitions.
+    if yearly:
+        out_of_scope = rows.filter(F.col("snap_seq").isNull()).count()
+        rows = rows.filter(F.col("snap_seq").isNotNull())
+        log(LOG, "dropped monthly rows for years not loaded", rows=out_of_scope)
+
     rows = rows.filter(
         (F.col("source_kind") == "yearly")
         | F.col("snap_seq").isNull()
