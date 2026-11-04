@@ -131,9 +131,13 @@ def land_file(
             retries=retries,
             what=f"HEAD {source}",
         )
-        head.raise_for_status()
-        etag = head.headers.get("ETag")
-        size = int(head.headers["Content-Length"]) if "Content-Length" in head.headers else None
+        try:
+            head.raise_for_status()
+            etag = head.headers.get("ETag")
+            size = int(head.headers["Content-Length"]) if "Content-Length" in head.headers else None
+        except requests.HTTPError as exc:
+            # Some servers refuse HEAD; fall back to downloading and comparing hashes.
+            log(LOG, "HEAD refused, will download and compare hash", file=name, error=str(exc))
         previous = manifest.by_source(source)
         if previous and previous.etag and previous.etag == etag and previous.bytes == size:
             log(LOG, "unchanged at source, skipping", file=name, etag=etag)

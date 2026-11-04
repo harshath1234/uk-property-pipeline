@@ -35,7 +35,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment: *ppd-env
+    environment:
+      <<: *ppd-env
+      PPD_RUN_ARGS: ${PPD_RUN_ARGS:-}   # e.g. "--from-dir tests/fixtures/ppd" for the offline demo
     entrypoint: ["sh", "-c", "ppd run-all $${PPD_RUN_ARGS:-}"]
     env_file:
       - path: .env
