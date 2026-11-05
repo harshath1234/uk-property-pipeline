@@ -38,7 +38,72 @@ QUERIES = {
         select p.property_type, count(*) as sales
         from {marts}.fct_sales f join {marts}.dim_property p on p.property_key = f.property_key
         group by 1 order by 2 desc""",
+    # ---- extra cuts for the dashboard (category A = standard-price sales)
+    "yearly": """
+        select d.year,
+               count(*)                                                    as sales,
+               {med_price}                                                 as median_price_gbp,
+               sum(case when p.is_new_build then 1 else 0 end)             as new_build_sales,
+               sum(case when p.tenure_code = 'L' then 1 else 0 end)        as leasehold_sales,
+               {med_new}                                                   as median_new_build_gbp,
+               {med_old}                                                   as median_established_gbp
+        from {marts}.fct_sales f
+        join {marts}.dim_date d     on d.date_key = f.date_key
+        join {marts}.dim_property p on p.property_key = f.property_key
+        where f.ppd_category_code = 'A'
+        group by d.year order by d.year""",
+    "type_year": """
+        select d.year, p.property_type, count(*) as sales, {med_price} as median_price_gbp
+        from {marts}.fct_sales f
+        join {marts}.dim_date d     on d.date_key = f.date_key
+        join {marts}.dim_property p on p.property_key = f.property_key
+        where f.ppd_category_code = 'A'
+        group by d.year, p.property_type order by d.year, p.property_type""",
+    "monthly_volume": """
+        select cast(d.month_start as date) as month, count(*) as sales,
+               sum(case when f.ppd_category_code = 'B' then 1 else 0 end) as category_b_sales
+        from {marts}.fct_sales f join {marts}.dim_date d on d.date_key = f.date_key
+        group by d.month_start order by d.month_start""",
+    "county_year": """
+        select l.county, d.year, count(*) as sales, {med_price} as median_price_gbp
+        from {marts}.fct_sales f
+        join {marts}.dim_date d     on d.date_key = f.date_key
+        join {marts}.dim_location l on l.location_key = f.location_key
+        where f.ppd_category_code = 'A'
+        group by l.county, d.year order by l.county, d.year""",
+    "price_bands": """
+        select d.year,
+               case when f.price_gbp < 100000 then 1 when f.price_gbp < 200000 then 2
+                    when f.price_gbp < 300000 then 3 when f.price_gbp < 400000 then 4
+                    when f.price_gbp < 500000 then 5 when f.price_gbp < 750000 then 6
+                    when f.price_gbp < 1000000 then 7 else 8 end as band,
+               count(*) as sales
+        from {marts}.fct_sales f join {marts}.dim_date d on d.date_key = f.date_key
+        where f.ppd_category_code = 'A'
+        group by 1, 2 order by 1, 2""",
+    "postcode_areas": """
+        select f.postcode_area, d.year, count(*) as sales, {med_price} as median_price_gbp
+        from {marts}.fct_sales f join {marts}.dim_date d on d.date_key = f.date_key
+        where f.ppd_category_code = 'A' and f.postcode_area is not null
+        group by f.postcode_area, d.year order by f.postcode_area, d.year""",
 }
+
+
+def _median(expr: str, bigquery: bool) -> str:
+    """Median that works on both warehouses (NULLs ignored)."""
+    if bigquery:
+        return f"approx_quantiles({expr}, 100 ignore nulls)[offset(50)]"
+    return f"median({expr})"
+
+
+def _names(bigquery: bool, reporting: str, marts: str) -> dict[str, str]:
+    return {
+        "reporting": reporting,
+        "marts": marts,
+        "med_price": _median("f.price_gbp", bigquery),
+        "med_new": _median("case when p.is_new_build then f.price_gbp end", bigquery),
+        "med_old": _median("case when not p.is_new_build then f.price_gbp end", bigquery),
+    }
 
 
 def _fetch(settings: Settings) -> dict[str, list[dict]]:
@@ -49,7 +114,7 @@ def _fetch(settings: Settings) -> dict[str, list[dict]]:
 
         project = os.environ["PPD_GCP_PROJECT"]
         client = bigquery.Client(project=project)
-        names = {"reporting": f"`{project}.reporting`", "marts": f"`{project}.marts`"}
+        names = _names(True, f"`{project}.reporting`", f"`{project}.marts`")
         for key, sql in QUERIES.items():
             out[key] = [dict(r) for r in client.query(sql.format(**names)).result()]
     else:
@@ -57,7 +122,7 @@ def _fetch(settings: Settings) -> dict[str, list[dict]]:
 
         con = duckdb.connect(str(settings.path("warehouse")), read_only=True)
         for key, sql in QUERIES.items():
-            cur = con.execute(sql.format(reporting="reporting", marts="marts"))
+            cur = con.execute(sql.format(**_names(False, "reporting", "marts")))
             cols = [c[0] for c in cur.description]
             out[key] = [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
     return out
@@ -67,8 +132,13 @@ def _run_metadata(settings: Settings) -> dict:
     manifest = Manifest(settings.path("manifest"))
     synthetic = any("tests/fixtures" in e.source.replace("\\", "/") for e in manifest.entries)
     reports = settings.path("data_root") / "reports"
-    quality = json.loads((reports / "quality.json").read_text()) \
-        if (reports / "quality.json").exists() else None
+    def read(name: str):
+        path = reports / name
+        return json.loads(path.read_text()) if path.exists() else None
+
+    quality = read("quality.json")
+    raw = read("raw_validation.json")
+    dbt = read("dbt_run_results.json")
     return {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "synthetic_fixture": synthetic,
@@ -85,6 +155,18 @@ def _run_metadata(settings: Settings) -> dict:
             "rows_validated": sum(p["rows"] for p in quality["partitions"].values()),
             "expectations_per_partition": max(
                 (p["evaluated"] for p in quality["partitions"].values()), default=0),
+        },
+        "raw_validation": None if raw is None else {
+            "files": len(raw),
+            "rows": sum(r["rows"] for r in raw),
+            "failing_rows": sum(r["failing_rows"] for r in raw),
+        },
+        "dbt": None if dbt is None else {
+            "models": sum(1 for r in dbt["results"]
+                          if r["unique_id"].startswith("model.") and r["status"] == "success"),
+            "tests_passed": sum(1 for r in dbt["results"]
+                                if r["unique_id"].startswith("test.") and r["status"] == "pass"),
+            "tests_total": sum(1 for r in dbt["results"] if r["unique_id"].startswith("test.")),
         },
     }
 

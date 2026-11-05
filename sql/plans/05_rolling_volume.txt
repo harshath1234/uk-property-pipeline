@@ -1,0 +1,33 @@
+-- 05_rolling_volume.sql | PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) | ppd.sale rows: 8,551,939 | wall time 0.72s
+WindowAgg  (cost=196224.17..196885.67 rows=2255 width=76) (actual time=706.927..712.414 rows=105 loops=1)
+  Buffers: shared hit=15889 read=72292
+  ->  Finalize GroupAggregate  (cost=196224.17..196823.66 rows=2255 width=20) (actual time=702.532..707.907 rows=105 loops=1)
+        Group Key: ((date_trunc('month'::text, (sale.sale_date)::timestamp with time zone))::date)
+        Buffers: shared hit=15889 read=72292
+        ->  Gather Merge  (cost=196224.17..196750.37 rows=4510 width=20) (actual time=702.495..707.821 rows=315 loops=1)
+              Workers Planned: 2
+              Workers Launched: 2
+              Buffers: shared hit=15889 read=72292
+              ->  Sort  (cost=195224.15..195229.79 rows=2255 width=20) (actual time=690.819..690.825 rows=105 loops=3)
+                    Sort Key: ((date_trunc('month'::text, (sale.sale_date)::timestamp with time zone))::date)
+                    Sort Method: quicksort  Memory: 29kB
+                    Buffers: shared hit=15889 read=72292
+                    Worker 0:  Sort Method: quicksort  Memory: 29kB
+                    Worker 1:  Sort Method: quicksort  Memory: 29kB
+                    ->  Partial HashAggregate  (cost=195059.09..195098.56 rows=2255 width=20) (actual time=690.763..690.781 rows=105 loops=3)
+                          Group Key: (date_trunc('month'::text, (sale.sale_date)::timestamp with time zone))::date
+                          Batches: 1  Memory Usage: 129kB
+                          Buffers: shared hit=15873 read=72292
+                          Worker 0:  Batches: 1  Memory Usage: 129kB
+                          Worker 1:  Batches: 1  Memory Usage: 129kB
+                          ->  Parallel Seq Scan on sale  (cost=0.00..159428.95 rows=3563014 width=6) (actual time=2.457..503.382 rows=2850646 loops=3)
+                                Filter: (sale_date >= '2018-01-01'::date)
+                                Buffers: shared hit=15873 read=72292
+Planning:
+  Buffers: shared hit=9 read=1
+Planning Time: 0.629 ms
+JIT:
+  Functions: 33
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 2.017 ms, Inlining 0.000 ms, Optimization 0.886 ms, Emission 10.901 ms, Total 13.804 ms
+Execution Time: 714.544 ms

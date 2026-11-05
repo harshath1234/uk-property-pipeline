@@ -1,0 +1,64 @@
+-- 02_district_rank_and_yoy.sql | PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) | ppd.sale rows: 8,551,939 | wall time 5.00s
+Incremental Sort  (cost=1870428.02..1901371.47 rows=271352 width=96) (actual time=4934.906..4985.904 rows=95 loops=1)
+  Sort Key: ranked.yr, ranked.price_rank
+  Presorted Key: ranked.yr
+  Full-sort Groups: 3  Sort Method: quicksort  Average Memory: 27kB  Peak Memory: 27kB
+  Buffers: shared hit=15898 read=144506, temp read=107185 written=107892
+  ->  Subquery Scan on ranked  (cost=1870289.59..1883857.19 rows=271352 width=96) (actual time=4934.771..4985.864 rows=95 loops=1)
+        Buffers: shared hit=15895 read=144506, temp read=107185 written=107892
+        ->  WindowAgg  (cost=1870289.59..1877751.77 rows=271352 width=52) (actual time=4934.753..4985.789 rows=95 loops=1)
+              Run Condition: (dense_rank() OVER (?) <= 10)
+              Buffers: shared hit=15895 read=144506, temp read=107185 written=107892
+              ->  Sort  (cost=1870289.59..1870967.97 rows=271352 width=44) (actual time=4934.694..4985.594 rows=3017 loops=1)
+                    Sort Key: yearly.yr, yearly.median_price DESC
+                    Sort Method: quicksort  Memory: 304kB
+                    Buffers: shared hit=15895 read=144506, temp read=107185 written=107892
+                    ->  WindowAgg  (cost=770559.87..1837452.84 rows=271352 width=44) (actual time=2255.167..4984.594 rows=3017 loops=1)
+                          Buffers: shared hit=15895 read=144506, temp read=107185 written=107892
+                          ->  Incremental Sort  (cost=770559.87..1832704.18 rows=271352 width=36) (actual time=2255.135..4983.496 rows=3017 loops=1)
+                                Sort Key: yearly.district_id, yearly.yr
+                                Presorted Key: yearly.district_id
+                                Full-sort Groups: 84  Sort Method: quicksort  Average Memory: 27kB  Peak Memory: 27kB
+                                Buffers: shared hit=15895 read=144506, temp read=107185 written=107892
+                                ->  Subquery Scan on yearly  (cost=765239.53..1815189.90 rows=271352 width=36) (actual time=2229.386..4982.313 rows=3017 loops=1)
+                                      Buffers: shared hit=15895 read=144506, temp read=107185 written=107892
+                                      ->  GroupAggregate  (cost=765239.53..1812476.38 rows=271352 width=68) (actual time=2229.384..4981.716 rows=3017 loops=1)
+                                            Group Key: d.district_id, EXTRACT(year FROM s.sale_date)
+                                            Filter: (count(*) >= 30)
+                                            Rows Removed by Filter: 17
+                                            Buffers: shared hit=15895 read=144506, temp read=107185 written=107892
+                                            ->  Merge Join  (cost=765239.53..1708541.95 rows=7175077 width=56) (actual time=2228.255..4057.972 rows=7157220 loops=1)
+                                                  Merge Cond: (p.district_id = d.district_id)
+                                                  Buffers: shared hit=15895 read=144506, temp read=107185 written=107892
+                                                  ->  Gather Merge  (cost=765239.38..1600895.33 rows=7175077 width=12) (actual time=2228.224..3272.448 rows=7157220 loops=1)
+                                                        Workers Planned: 2
+                                                        Workers Launched: 2
+                                                        Buffers: shared hit=15892 read=144505, temp read=107185 written=107892
+                                                        ->  Sort  (cost=764239.36..771713.39 rows=2989615 width=12) (actual time=2210.317..2428.437 rows=2385740 loops=3)
+                                                              Sort Key: p.district_id, (EXTRACT(year FROM s.sale_date))
+                                                              Sort Method: external merge  Disk: 63376kB
+                                                              Buffers: shared hit=15892 read=144505, temp read=107185 written=107892
+                                                              Worker 0:  Sort Method: external merge  Disk: 62176kB
+                                                              Worker 1:  Sort Method: external merge  Disk: 63640kB
+                                                              ->  Parallel Hash Join  (cost=155816.33..340497.42 rows=2989615 width=12) (actual time=942.233..1547.576 rows=2385740 loops=3)
+                                                                    Hash Cond: (s.property_id = p.property_id)
+                                                                    Buffers: shared hit=15807 read=144504, temp read=59896 written=60476
+                                                                    ->  Parallel Seq Scan on sale s  (cost=0.00..132706.35 rows=2989615 width=16) (actual time=0.063..176.463 rows=2385740 loops=3)
+                                                                          Filter: (ppd_category = 'A'::bpchar)
+                                                                          Rows Removed by Filter: 464906
+                                                                          Buffers: shared hit=15748 read=72417
+                                                                    ->  Parallel Hash  (cost=102663.48..102663.48 rows=3057748 width=12) (actual time=519.305..519.307 rows=2445660 loops=3)
+                                                                          Buckets: 262144  Batches: 64  Memory Usage: 7488kB
+                                                                          Buffers: shared read=72086, temp written=28640
+                                                                          ->  Parallel Seq Scan on property p  (cost=0.00..102663.48 rows=3057748 width=12) (actual time=91.326..301.328 rows=2445660 loops=3)
+                                                                                Buffers: shared read=72086
+                                                  ->  Index Scan using district_pkey on district d  (cost=0.15..19.56 rows=361 width=16) (actual time=0.020..0.761 rows=361 loops=1)
+                                                        Buffers: shared hit=3 read=1
+Planning:
+  Buffers: shared hit=204 read=49
+Planning Time: 5.942 ms
+JIT:
+  Functions: 60
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+  Timing: Generation 2.402 ms, Inlining 84.917 ms, Optimization 103.098 ms, Emission 84.511 ms, Total 274.927 ms
+Execution Time: 4991.179 ms

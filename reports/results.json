@@ -1,0 +1,34 @@
+{
+  "synthetic_fixture": false,
+  "source_files": 10,
+  "source_bytes": 1506515561,
+  "raw_rows": 8650042,
+  "raw_failing_rows": 0,
+  "quarantined_files": 0,
+  "silver_rows": 8551939,
+  "fact_rows": 8551939,
+  "sale_date_range": [
+    "2018-01-01",
+    "2026-09-30"
+  ],
+  "districts": 361,
+  "ge_partitions": 9,
+  "ge_expectations_per_partition": 17,
+  "ge_success": true,
+  "stage_seconds": {
+    "ingest": 0.9,
+    "validate": 52.6,
+    "transform": 182.0,
+    "quality": 56.3,
+    "bigquery": 0.0,
+    "dbt": 12.8,
+    "postgres": 564.1,
+    "site": 0.3
+  },
+  "dbt_tests_passed": 26,
+  "dbt_models_built": 7,
+  "postgres_sale_rows": 8551939,
+  "postgres_property_rows": 7336981,
+  "postgres_postcode_rows": 1204571,
+  "postgres_district_rows": 361
+}

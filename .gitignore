@@ -1,5 +1,5 @@
 # data never goes to git (the full dataset is several GB)
-data/
+/data/
 *.duckdb
 *.duckdb.wal
 

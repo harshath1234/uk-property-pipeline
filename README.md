@@ -42,20 +42,30 @@ BigQuery: see [docs/cloud.md](docs/cloud.md).
 
 ## Results (from the last real run)
 
-> Fill this table from `reports/results.json` after `make run` and
-> `python scripts/summarise_run.py`. Do not edit numbers by hand.
+Run on 4 Nov 2026 in Docker on a laptop (Intel Core Ultra 9 285H, 32 GB RAM).
+Every figure below is copied from `reports/results.json`.
 
 | Measure | Value |
 |---|---|
-| Source files / size | `[from results.json]` |
-| Raw rows validated (pandera) | `[from results.json]` |
-| Rows quarantined | `[from results.json]` |
-| Silver rows (current sales) | `[from results.json]` |
-| Sale date range | `[from results.json]` |
-| Great Expectations | `[n checks × n partitions, pass/fail]` |
-| dbt models / tests passed | `[from results.json]` |
-| PostgreSQL sales / properties | `[from results.json]` |
-| Full run time (laptop spec) | `[from results.json stage_seconds]` |
+| Source files | 10 (yearly files 2018–2026 + monthly change file), 1.51 GB |
+| Raw rows validated (pandera) | 8,650,042, **0 failing** |
+| Rows quarantined in Spark | 0 |
+| Silver rows (current sales after A/C/D merge) | 8,551,939 |
+| Sale date range | 1 Jan 2018 – 30 Sep 2026 |
+| Local authority districts | 361 |
+| Great Expectations | 17 checks × 9 year partitions, **all passed** |
+| dbt | 7 models built, **26/26 tests passed** (incl. fact ↔ staging reconciliation) |
+| PostgreSQL (3NF) | 8,551,939 sales · 7,336,981 properties · 1,204,571 postcodes |
+| Stage times, re-run with files already landed | validate 53 s · Spark 182 s · GE 56 s · dbt 13 s · Postgres load 564 s |
+
+**Found by the pipeline's own checks:** the first full run stopped at the
+Great Expectations gate. HM Land Registry's monthly change file also carries
+late registrations back to 1995, which formed tiny, unrepresentative year
+partitions. Silver now keeps only years with a full yearly snapshot, with a
+regression test (`tests/test_spark.py`).
+
+**Caveat:** new-build sales are often registered months after completion, so
+the latest one or two years understate the new-build share.
 
 ## What each skill is proven by
 

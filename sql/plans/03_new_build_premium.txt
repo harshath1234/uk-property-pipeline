@@ -1,0 +1,58 @@
+-- 03_new_build_premium.sql | PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) | ppd.sale rows: 8,551,939 | wall time 6.19s
+Sort  (cost=1872153.13..1872519.57 rows=146575 width=67) (actual time=6134.468..6183.206 rows=2683 loops=1)
+  Sort Key: stats.yr DESC, (round(((((stats.new_median / NULLIF(stats.old_median, '0'::double precision)) - '1'::double precision) * '100'::double precision))::numeric, 1)) DESC NULLS LAST
+  Sort Method: quicksort  Memory: 283kB
+  Buffers: shared hit=16045 read=144402, temp read=144198 written=144962
+  ->  Subquery Scan on stats  (cost=880626.29..1853563.06 rows=146575 width=67) (actual time=3675.360..6180.906 rows=2683 loops=1)
+        Buffers: shared hit=16045 read=144402, temp read=144198 written=144962
+        ->  GroupAggregate  (cost=880626.29..1849898.69 rows=146575 width=83) (actual time=3675.346..6176.892 rows=2683 loops=1)
+              Group Key: c.name, s.property_type, (EXTRACT(year FROM s.sale_date))
+              Filter: ((count(*) FILTER (WHERE s.is_new_build) >= 20) AND (count(*) FILTER (WHERE (NOT s.is_new_build)) >= 20))
+              Rows Removed by Filter: 1434
+              Buffers: shared hit=16045 read=144402, temp read=144198 written=144962
+              ->  Gather Merge  (cost=880626.29..1669931.15 rows=6777099 width=56) (actual time=3674.638..5052.035 rows=7157220 loops=1)
+                    Workers Planned: 2
+                    Workers Launched: 2
+                    Buffers: shared hit=16045 read=144402, temp read=144198 written=144962
+                    ->  Sort  (cost=879626.26..886685.74 rows=2823791 width=56) (actual time=3659.845..4042.682 rows=2385740 loops=3)
+                          Sort Key: c.name, s.property_type, (EXTRACT(year FROM s.sale_date))
+                          Sort Method: external merge  Disk: 103024kB
+                          Buffers: shared hit=16045 read=144402, temp read=144198 written=144962
+                          Worker 0:  Sort Method: external merge  Disk: 103112kB
+                          Worker 1:  Sort Method: external merge  Disk: 103088kB
+                          ->  Hash Join  (cost=155831.08..384029.33 rows=2823791 width=56) (actual time=899.955..1915.034 rows=2385740 loops=3)
+                                Hash Cond: (d.county_id = c.county_id)
+                                Buffers: shared hit=15943 read=144402, temp read=66918 written=67532
+                                ->  Hash Join  (cost=155827.45..369285.26 rows=2823791 width=15) (actual time=803.046..1547.198 rows=2385740 loops=3)
+                                      Hash Cond: (p.district_id = d.district_id)
+                                      Buffers: shared hit=15882 read=144402, temp read=66918 written=67532
+                                      ->  Parallel Hash Join  (cost=155816.33..361774.67 rows=2823791 width=15) (actual time=802.951..1374.670 rows=2385740 loops=3)
+                                            Hash Cond: (s.property_id = p.property_id)
+                                            Buffers: shared hit=15873 read=144402, temp read=66918 written=67532
+                                            ->  Parallel Seq Scan on sale s  (cost=0.00..150522.89 rows=2823791 width=19) (actual time=0.076..249.756 rows=2385740 loops=3)
+                                                  Filter: ((ppd_category = 'A'::bpchar) AND (property_type = ANY ('{D,S,T,F}'::bpchar[])))
+                                                  Rows Removed by Filter: 464906
+                                                  Buffers: shared hit=15753 read=72412
+                                            ->  Parallel Hash  (cost=102663.48..102663.48 rows=3057748 width=12) (actual time=322.546..322.548 rows=2445660 loops=3)
+                                                  Buckets: 262144  Batches: 64  Memory Usage: 7488kB
+                                                  Buffers: shared hit=96 read=71990, temp written=28624
+                                                  ->  Parallel Seq Scan on property p  (cost=0.00..102663.48 rows=3057748 width=12) (actual time=0.036..143.943 rows=2445660 loops=3)
+                                                        Buffers: shared hit=96 read=71990
+                                      ->  Hash  (cost=6.61..6.61 rows=361 width=8) (actual time=0.079..0.080 rows=361 loops=3)
+                                            Buckets: 1024  Batches: 1  Memory Usage: 23kB
+                                            Buffers: shared hit=9
+                                            ->  Seq Scan on district d  (cost=0.00..6.61 rows=361 width=8) (actual time=0.031..0.056 rows=361 loops=3)
+                                                  Buffers: shared hit=9
+                                ->  Hash  (cost=2.17..2.17 rows=117 width=17) (actual time=96.878..96.879 rows=117 loops=3)
+                                      Buckets: 1024  Batches: 1  Memory Usage: 14kB
+                                      Buffers: shared hit=3
+                                      ->  Seq Scan on county c  (cost=0.00..2.17 rows=117 width=17) (actual time=96.830..96.846 rows=117 loops=3)
+                                            Buffers: shared hit=3
+Planning:
+  Buffers: shared hit=94 read=6 dirtied=2
+Planning Time: 2.179 ms
+JIT:
+  Functions: 91
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+  Timing: Generation 2.319 ms, Inlining 71.278 ms, Optimization 124.964 ms, Emission 94.452 ms, Total 293.014 ms
+Execution Time: 6189.245 ms

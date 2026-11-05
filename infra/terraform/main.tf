@@ -13,8 +13,8 @@ provider "google" {
   region  = var.region
 }
 
+# dbt writes to these datasets; ppd_raw is filled by the pipeline's load job.
 locals {
-  # dbt writes to these; ppd_raw is filled by the pipeline's load job
   datasets = ["ppd_raw", "staging", "marts", "reporting", "reference"]
   labels   = { project = "uk-property-pipeline", managed_by = "terraform" }
   apis     = concat(["bigquery.googleapis.com", "iam.googleapis.com"], var.create_bucket ? ["storage.googleapis.com"] : [])
@@ -43,13 +43,13 @@ resource "google_project_iam_member" "bq_job_user" {
 }
 
 # ---------------------------------------------------------------- BigQuery
+# The sandbox forces a 60-day table expiry; with billing, keep tables forever.
 resource "google_bigquery_dataset" "ds" {
-  for_each                   = toset(local.datasets)
-  dataset_id                 = each.value
-  location                   = var.region
-  labels                     = local.labels
-  delete_contents_on_destroy = true
-  # The sandbox forces a 60-day table expiry; with billing, keep tables forever.
+  for_each                    = toset(local.datasets)
+  dataset_id                  = each.value
+  location                    = var.region
+  labels                      = local.labels
+  delete_contents_on_destroy  = true
   default_table_expiration_ms = var.sandbox ? 60 * 24 * 60 * 60 * 1000 : null
   depends_on                  = [google_project_service.apis]
 }

@@ -3,264 +3,771 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>UK House Prices Pipeline</title>
-<meta name="description" content="Dashboard built from an end-to-end data pipeline over HM Land Registry Price Paid Data: Spark, dbt, PostgreSQL, Airflow, BigQuery.">
+<title>UK Property Market Pipeline</title>
+<meta name="description" content="England and Wales house prices from HM Land Registry Price Paid Data, built by an end-to-end data pipeline: Spark, dbt, PostgreSQL, Airflow, Great Expectations.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  :root {
-    color-scheme: light;
-    --surface-0: #f4f3ef; --surface-1: #fcfcfb; --border: #e2e0d8;
-    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77756f;
-    --grid: #e7e5de; --accent: #2a78d6;
-    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
-    --warn-bg: #fff4d6; --warn-ink: #6b4a00; --good: #008300; --bad: #c62b2b;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2a;
-      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
-      --grid: #2a2927; --accent: #3987e5;
-      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
-      --warn-bg: #3a2d08; --warn-ink: #f5d58a; --good: #4cb84c; --bad: #e66767;
-    }
-  }
-  :root[data-theme="dark"] {
+:root {
+  color-scheme: light;
+  --page: #f6f5f1; --surface: #fcfcfb; --surface-2: #f0efea; --border: #e1e0d9;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #77756f; --grid: #e7e5de; --axis: #c3c2b7;
+  --accent: #2a78d6; --accent-soft: #e6f0fc;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --up: #006300; --down: #c62b2b; --div-pos: #2a78d6; --div-neg: #e34948; --neutral: #d9d7cf;
+  --warn-bg: #fff4d6; --warn-ink: #6b4a00; --ok-bg: #e5f4e5; --ok-ink: #0a5a0a;
+  --shadow: 0 1px 2px rgba(11,11,11,.04), 0 4px 16px rgba(11,11,11,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2a;
-    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
-    --grid: #2a2927; --accent: #3987e5;
-    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
-    --warn-bg: #3a2d08; --warn-ink: #f5d58a; --good: #4cb84c; --bad: #e66767;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --border: #2e2d2a;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #9a998f; --grid: #2a2927; --axis: #383835;
+    --accent: #3987e5; --accent-soft: #15253a;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --up: #0ca30c; --down: #e66767; --div-pos: #3987e5; --div-neg: #e66767; --neutral: #383835;
+    --warn-bg: #3a2d08; --warn-ink: #f5d58a; --ok-bg: #12301a; --ok-ink: #8fe08f;
+    --shadow: none;
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--surface-0); color: var(--text-primary);
-         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
-  header h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  header p { margin: 0; color: var(--text-secondary); }
-  a { color: var(--accent); }
-  .banner { margin: 16px 0 0; padding: 10px 14px; border-radius: 8px;
-            background: var(--warn-bg); color: var(--warn-ink); font-weight: 600; }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-          gap: 12px; margin: 20px 0; }
-  .card { background: var(--surface-1); border: 1px solid var(--border);
-          border-radius: 10px; padding: 16px; }
-  .kpi .label { color: var(--text-secondary); font-size: 13px; }
-  .kpi .value { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .kpi .sub { color: var(--text-muted); font-size: 12px; }
-  h2 { font-size: 17px; margin: 0 0 2px; }
-  .note { color: var(--text-muted); font-size: 13px; margin: 0 0 12px; }
-  .grid2 { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 12px; }
-  @media (min-width: 900px) { .grid2 { grid-template-columns: 3fr 2fr; } }
-  .chart-box { position: relative; height: 320px; }
-  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  select, button { font: inherit; padding: 4px 8px; border-radius: 6px;
-                   border: 1px solid var(--border); background: var(--surface-1);
-                   color: var(--text-primary); }
-  details { margin-top: 8px; }
-  summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; }
-  .table-wrap { overflow-x: auto; }
-  table { border-collapse: collapse; width: 100%; font-size: 13px;
-          font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
-  th { color: var(--text-secondary); font-weight: 600; }
-  td.num, th.num { text-align: right; }
-  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px;
-          border: 1px solid var(--border); }
-  .pass { color: var(--good); } .fail { color: var(--bad); }
-  footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
-  .arch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
-  .arch span.step { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
-                    background: var(--surface-0); }
-  .arch span.arrow { color: var(--text-muted); }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --border: #2e2d2a;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #9a998f; --grid: #2a2927; --axis: #383835;
+  --accent: #3987e5; --accent-soft: #15253a;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+  --up: #0ca30c; --down: #e66767; --div-pos: #3987e5; --div-neg: #e66767; --neutral: #383835;
+  --warn-bg: #3a2d08; --warn-ink: #f5d58a; --ok-bg: #12301a; --ok-ink: #8fe08f;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+body { margin: 0; background: var(--page); color: var(--ink);
+       font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+       -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, .mono { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 12px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- top bar */
+.topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--page) 88%, transparent);
+          backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--border); }
+.topbar-inner { max-width: 1240px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; white-space: nowrap; }
+.brand svg { flex: none; }
+nav.sections { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; }
+nav.sections a { color: var(--ink-2); padding: 6px 10px; border-radius: 6px; font-size: 13px; white-space: nowrap; }
+nav.sections a:hover { background: var(--surface-2); text-decoration: none; color: var(--ink); }
+.top-actions { display: flex; gap: 8px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 500;
+       padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface);
+       color: var(--ink); cursor: pointer; }
+.btn:hover { background: var(--surface-2); text-decoration: none; }
+@media (max-width: 760px) { nav.sections { display: none; } .btn .label { display: none; } }
+
+main { max-width: 1240px; margin: 0 auto; padding: 24px 16px 56px; }
+
+/* ---------- hero */
+.hero { display: grid; gap: 8px; margin-bottom: 20px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.hero h1 { font-size: clamp(24px, 3.2vw, 34px); line-height: 1.15; margin: 0; letter-spacing: -.02em; font-weight: 700; }
+.hero p { margin: 0; color: var(--ink-2); max-width: 760px; font-size: 15px; }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 3px 10px;
+         border-radius: 99px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
+.badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--up); }
+.badge.ok { background: var(--ok-bg); color: var(--ok-ink); border-color: transparent; }
+.banner { padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-ink); font-weight: 600; margin-top: 8px; }
+
+/* ---------- KPI tiles */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 10px;
+       box-shadow: var(--shadow); display: grid; gap: 2px; min-width: 0; }
+.kpi .label { font-size: 12.5px; color: var(--ink-2); font-weight: 500; }
+.kpi .value { font-size: 26px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.kpi .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); min-height: 18px; }
+.delta { font-weight: 600; font-variant-numeric: tabular-nums; }
+.delta.up { color: var(--up); } .delta.down { color: var(--down); }
+.kpi canvas { width: 100% !important; height: 34px !important; margin-top: 4px; }
+
+/* ---------- sections and cards */
+section.block { margin-top: 36px; }
+.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.block-head h2 { font-size: 19px; margin: 0; letter-spacing: -.01em; }
+.block-head p { margin: 0; color: var(--muted); font-size: 13px; }
+.grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 960px) {
+  .g-2 { grid-template-columns: 1fr 1fr; } .g-3-2 { grid-template-columns: 3fr 2fr; }
+  .g-2-3 { grid-template-columns: 2fr 3fr; }
+}
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+        box-shadow: var(--shadow); min-width: 0; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.card h3 { font-size: 15px; margin: 0; font-weight: 600; }
+.card .sub { color: var(--muted); font-size: 12.5px; margin: 2px 0 0; }
+.chart { position: relative; height: 300px; }
+.chart.tall { height: 360px; } .chart.short { height: 240px; }
+.note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+.empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+
+/* ---------- controls */
+.seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); }
+.seg button { font: inherit; font-size: 12px; font-weight: 500; border: 0; background: transparent; color: var(--ink-2);
+              padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+select, input[type="search"] { font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--border);
+                               background: var(--surface); color: var(--ink); }
+input[type="search"] { min-width: 0; width: 220px; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ---------- tables */
+details.table-toggle { margin-top: 8px; }
+details.table-toggle summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--ink-2); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--surface); }
+th.sortable { cursor: pointer; user-select: none; } th.sortable:hover { color: var(--ink); }
+th .arrow { color: var(--muted); font-size: 10px; }
+td.r, th.r { text-align: right; }
+tbody tr:hover td { background: var(--surface-2); }
+.scroll-y { max-height: 440px; overflow-y: auto; }
+.bar-cell { position: relative; min-width: 120px; }
+.bar-cell span.bar { position: absolute; left: 10px; top: 50%; height: 6px; transform: translateY(-50%); border-radius: 0 3px 3px 0;
+                     background: var(--s1); opacity: .85; }
+.pager { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; color: var(--muted); font-size: 12.5px; }
+
+/* ---------- pipeline */
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.stage { flex: 1 1 140px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
+.stage .t { font-weight: 600; font-size: 13px; } .stage .d { color: var(--muted); font-size: 12px; }
+.stage .v { margin-top: 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.arrow-sep { display: flex; align-items: center; color: var(--muted); }
+@media (max-width: 760px) { .arrow-sep { display: none; } }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 12px; }
+.stat { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.stat .k { color: var(--ink-2); font-size: 12px; } .stat .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.stat .s { color: var(--muted); font-size: 12px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600; }
+.pill.ok { background: var(--ok-bg); color: var(--ok-ink); } .pill.bad { background: var(--warn-bg); color: var(--warn-ink); }
+.stack-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.stack-list span { font-size: 12px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); color: var(--ink-2); }
+
+footer { max-width: 1240px; margin: 0 auto; padding: 24px 16px 40px; color: var(--muted); font-size: 12px;
+         border-top: 1px solid var(--border); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.skeleton { color: var(--muted); padding: 48px 0; text-align: center; }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>UK House Prices: Data Pipeline Dashboard</h1>
-    <p>Every figure below is produced by the pipeline in
-      <a href="https://github.com/harshath1234/uk-property-pipeline">this repository</a>
-      from <span id="dataset-label">HM Land Registry Price Paid Data</span>.</p>
-    <div id="synthetic-banner" class="banner" hidden>
-      Synthetic test data: this page was built from the repo's random test fixture, not real sales.
-      Run <code>make run</code> on the real files to publish real figures.
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="var(--accent)"/><path d="M6 13.5 13 7l7 6.5V20a1 1 0 0 1-1 1h-3.5v-4.5h-5V21H7a1 1 0 0 1-1-1z" fill="#fff"/></svg>
+      <span>UK Property Pipeline</span>
     </div>
-  </header>
-
-  <section class="kpis" id="kpis" aria-label="Headline figures"></section>
-
-  <div class="grid2">
-    <section class="card">
-      <h2>Median sale price by property type</h2>
-      <p class="note">Monthly median, standard-price sales (category A), England and Wales.</p>
-      <div class="chart-box"><canvas id="monthly-chart" role="img"
-        aria-label="Line chart of monthly median price by property type"></canvas></div>
-      <details><summary>Show as table</summary><div class="table-wrap" id="monthly-table"></div></details>
-    </section>
-    <section class="card">
-      <h2>Highest-priced districts</h2>
-      <div class="controls">
-        <label for="year-select" class="note" style="margin:0">Year</label>
-        <select id="year-select"></select>
-      </div>
-      <div class="chart-box"><canvas id="district-chart" role="img"
-        aria-label="Bar chart of the ten districts with the highest median price"></canvas></div>
-      <details><summary>Show as table</summary><div class="table-wrap" id="district-table"></div></details>
-    </section>
+    <nav class="sections" aria-label="Sections">
+      <a href="#prices">Prices</a><a href="#activity">Activity</a><a href="#regions">Regions</a>
+      <a href="#explorer">District explorer</a><a href="#pipeline">Pipeline &amp; quality</a>
+    </nav>
+    <div class="top-actions">
+      <a class="btn" href="https://github.com/harshath1234/uk-property-pipeline" target="_blank" rel="noopener">
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+        <span class="label">Code</span></a>
+      <button class="btn" id="theme-btn" type="button" aria-label="Toggle dark mode">
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+    </div>
   </div>
+</header>
 
-  <section class="card" style="margin-bottom:12px">
-    <h2>Pipeline</h2>
-    <p class="note">How these numbers were produced.</p>
-    <div class="arch">
-      <span class="step">HM Land Registry CSV</span><span class="arrow">→</span>
-      <span class="step">Ingest (checksums, retries)</span><span class="arrow">→</span>
-      <span class="step">Spark bronze / silver</span><span class="arrow">→</span>
-      <span class="step">Great Expectations</span><span class="arrow">→</span>
-      <span class="step">dbt star schema (DuckDB / BigQuery)</span><span class="arrow">→</span>
-      <span class="step">PostgreSQL 3NF</span><span class="arrow">→</span>
-      <span class="step">This page</span>
+<main>
+  <section class="hero">
+    <div class="eyebrow">England &amp; Wales · residential sales</div>
+    <h1 id="hero-title">House prices, built from raw Land Registry data</h1>
+    <p id="hero-sub">Every figure on this page is produced by an orchestrated data pipeline — ingestion with checksums, PySpark change-data merge,
+      Great Expectations, a dbt star schema and a PostgreSQL model — from HM Land Registry Price Paid Data.</p>
+    <div class="badges" id="badges"></div>
+    <div id="synthetic-banner" class="banner" hidden>Synthetic test data: this page was built from the repo's random test fixture, not real sales.</div>
+  </section>
+
+  <div class="kpis" id="kpis"><div class="skeleton">Loading…</div></div>
+
+  <!-- PRICES -->
+  <section class="block" id="prices">
+    <div class="block-head"><h2>Prices</h2><p>Standard-price sales (PPD category A), as HM Land Registry's own statistics use.</p></div>
+    <div class="grid g-3-2">
+      <div class="card">
+        <div class="card-head">
+          <div><h3>Median sale price by property type</h3><p class="sub">Monthly median</p></div>
+          <div class="seg" id="range-seg" role="group" aria-label="Time range">
+            <button data-range="0" aria-pressed="true">All</button><button data-range="60">5Y</button>
+            <button data-range="36">3Y</button><button data-range="12">1Y</button>
+          </div>
+        </div>
+        <div class="chart tall"><canvas id="c-price" role="img" aria-label="Line chart of monthly median price by property type"></canvas></div>
+        <details class="table-toggle"><summary>Show as table</summary><div class="table-wrap scroll-y" id="t-price"></div></details>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>New build vs established</h3><p class="sub">Annual median price; premium shown in tooltip</p></div></div>
+        <div class="chart tall"><canvas id="c-newbuild" role="img" aria-label="New-build and established median price by year"></canvas></div>
+        <p class="note" id="n-newbuild"></p>
+      </div>
     </div>
-    <p class="note" style="margin-top:10px">Orchestrated monthly by Airflow; CI on GitHub Actions; GCP resources in Terraform.</p>
+    <div class="grid g-2" style="margin-top:12px">
+      <div class="card">
+        <div class="card-head">
+          <div><h3>Price distribution</h3><p class="sub">Share of sales by price band</p></div>
+          <select id="band-year" aria-label="Year for price distribution"></select>
+        </div>
+        <div class="chart"><canvas id="c-bands" role="img" aria-label="Bar chart of sales by price band"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Annual median price</h3><p class="sub">All property types, with year-on-year change</p></div></div>
+        <div class="chart"><canvas id="c-annual" role="img" aria-label="Bar chart of annual median price"></canvas></div>
+      </div>
+    </div>
   </section>
 
-  <section class="card">
-    <h2>Last run</h2>
-    <p class="note" id="run-meta"></p>
-    <div class="table-wrap" id="files-table"></div>
+  <!-- ACTIVITY -->
+  <section class="block" id="activity">
+    <div class="block-head"><h2>Market activity</h2><p>Transaction volumes and the mix of what sold.</p></div>
+    <div class="grid g-3-2">
+      <div class="card">
+        <div class="card-head"><div><h3>Monthly transactions</h3><p class="sub">Standard (A) and additional (B: repossessions, buy-to-let, company sales)</p></div></div>
+        <div class="chart"><canvas id="c-volume" role="img" aria-label="Stacked bar chart of monthly transactions"></canvas></div>
+        <p class="note">The most recent months are still filling in: registrations reach HM Land Registry weeks to months after completion.</p>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Property mix</h3><p class="sub">Share of sales by type, per year</p></div></div>
+        <div class="chart"><canvas id="c-mix" role="img" aria-label="Stacked bar chart of property type share by year"></canvas></div>
+      </div>
+    </div>
+    <div class="grid g-2" style="margin-top:12px">
+      <div class="card">
+        <div class="card-head"><div><h3>New-build and leasehold share</h3><p class="sub">Percent of standard-price sales</p></div></div>
+        <div class="chart short"><canvas id="c-share" role="img" aria-label="Line chart of new-build and leasehold share"></canvas></div>
+        <p class="note">New-build sales are often registered months after completion, so the latest one or two years understate the new-build share.</p>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Sales by property type</h3><p class="sub">All sales in the warehouse</p></div></div>
+        <div class="chart short"><canvas id="c-type" role="img" aria-label="Bar chart of sales by property type"></canvas></div>
+      </div>
+    </div>
   </section>
 
-  <footer>
-    Contains HM Land Registry data © Crown copyright and database right. Licensed under the
-    Open Government Licence v3.0. Aggregates only; no addresses are published here.
-  </footer>
+  <!-- REGIONS -->
+  <section class="block" id="regions">
+    <div class="block-head">
+      <h2>Regions</h2>
+      <div class="controls"><label for="region-year" class="note" style="margin:0">Year</label><select id="region-year"></select></div>
+    </div>
+    <div class="grid g-2">
+      <div class="card">
+        <div class="card-head"><div><h3>Most expensive districts</h3><p class="sub">Top 10 by median price</p></div></div>
+        <div class="chart tall"><canvas id="c-top" role="img" aria-label="Top 10 districts by median price"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Biggest movers</h3><p class="sub" id="movers-sub">Year-on-year change in district median</p></div></div>
+        <div class="chart tall"><canvas id="c-movers" role="img" aria-label="Districts with the largest rise and fall in median price"></canvas></div>
+      </div>
+    </div>
+    <div class="grid g-2-3" style="margin-top:12px">
+      <div class="card">
+        <div class="card-head"><div><h3>Postcode areas</h3><p class="sub">Top 15 by median price</p></div></div>
+        <div class="chart tall"><canvas id="c-areas" role="img" aria-label="Top postcode areas by median price"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Counties</h3><p class="sub">Median price and volume; click a header to sort</p></div>
+          <input type="search" id="county-search" placeholder="Filter counties…" aria-label="Filter counties"></div>
+        <div class="table-wrap scroll-y" id="t-county"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EXPLORER -->
+  <section class="block" id="explorer">
+    <div class="block-head"><h2>District explorer</h2><p>Every local authority district, any year.</p></div>
+    <div class="card">
+      <div class="card-head">
+        <div class="controls">
+          <input type="search" id="district-search" placeholder="Search district or county…" aria-label="Search districts">
+          <select id="explorer-year" aria-label="Year"></select>
+        </div>
+        <span class="note" id="explorer-count" style="margin:0"></span>
+      </div>
+      <div class="table-wrap" id="t-district"></div>
+      <div class="pager"><span id="pager-info"></span><span class="controls">
+        <button class="btn" id="prev" type="button">Previous</button><button class="btn" id="next" type="button">Next</button></span></div>
+    </div>
+  </section>
+
+  <!-- PIPELINE -->
+  <section class="block" id="pipeline">
+    <div class="block-head"><h2>Pipeline &amp; data quality</h2><p id="run-meta"></p></div>
+    <div class="card">
+      <div class="flow" id="flow"></div>
+      <div class="stats" id="quality-stats"></div>
+      <div class="stack-list">
+        <span>Python</span><span>PySpark</span><span>pandera</span><span>Great Expectations</span><span>dbt</span>
+        <span>DuckDB</span><span>BigQuery</span><span>PostgreSQL</span><span>Airflow</span><span>Docker</span>
+        <span>GitHub Actions</span><span>Terraform</span>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="card-head"><div><h3>Source files in the last run</h3><p class="sub">Each file is checksummed on landing; re-runs skip unchanged files.</p></div></div>
+      <div class="table-wrap" id="t-files"></div>
+    </div>
+  </section>
 </main>
+
+<footer>
+  <span>Contains HM Land Registry data © Crown copyright and database right. Licensed under the Open Government Licence v3.0.
+    Aggregates only; no addresses are published.</span>
+  <span>Built by Harshath Udayakumar · <a href="https://github.com/harshath1234/uk-property-pipeline">source code</a></span>
+</footer>
 
 <script>
 (async function () {
-  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 });
-  const num = new Intl.NumberFormat("en-GB");
-  const pct = (x) => (x == null ? "–" : (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%");
-  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  "use strict";
+  // ---------------------------------------------------------------- helpers
+  const $ = (id) => document.getElementById(id);
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const N = (v) => (v == null || v === "" ? null : Number(v));
+  const fmtInt = new Intl.NumberFormat("en-GB");
+  const fmtGBP = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 });
+  const gbpK = (v) => (v >= 1e6 ? "£" + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + "m" : "£" + Math.round(v / 1000) + "k");
+  const compact = (v) => (v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : v >= 1e4 ? Math.round(v / 1000) + "k" : fmtInt.format(v));
+  const pct = (v, d = 1) => (v == null || !isFinite(v) ? "–" : (v * 100).toFixed(d) + "%");
+  const signedPct = (v, d = 1) => (v == null || !isFinite(v) ? "–" : (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(d) + "%");
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const title = (s) => String(s ?? "").toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\bOf\b/g, "of").replace(/\bAnd\b/g, "and").replace(/\bUpon\b/g, "upon");
+  const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+                  set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
 
-  let data;
+  // ---------------------------------------------------------------- theme
+  const saved = store.get("ppd-theme");
+  if (saved) document.documentElement.dataset.theme = saved;
+  $("theme-btn").addEventListener("click", () => {
+    const dark = document.documentElement.dataset.theme
+      ? document.documentElement.dataset.theme === "dark"
+      : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = dark ? "light" : "dark";
+    store.set("ppd-theme", document.documentElement.dataset.theme);
+    renderCharts();
+  });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => renderCharts());
+
+  // ---------------------------------------------------------------- data
+  let D;
   try {
     const res = await fetch("data/dashboard.json", { cache: "no-store" });
     if (!res.ok) throw new Error(res.status);
-    data = await res.json();
+    D = await res.json();
   } catch (e) {
-    document.getElementById("kpis").innerHTML =
-      '<div class="card">No data yet. Run the pipeline (<code>make run</code>) to generate <code>site/data/dashboard.json</code>.</div>';
+    $("kpis").innerHTML = '<div class="card empty">No data yet. Run the pipeline to generate <code>site/data/dashboard.json</code>.</div>';
     return;
   }
+  const has = (k) => Array.isArray(D[k]) && D[k].length > 0;
+  const meta = D.meta;
+  $("synthetic-banner").hidden = !meta.synthetic_fixture;
 
-  const meta = data.meta;
-  document.getElementById("dataset-label").textContent = meta.dataset_label;
-  document.getElementById("synthetic-banner").hidden = !meta.synthetic_fixture;
+  const TYPES = ["Detached", "Semi-detached", "Terraced", "Flat/maisonette", "Other"];
+  const TYPE_VAR = { "Detached": "--s1", "Semi-detached": "--s2", "Terraced": "--s3", "Flat/maisonette": "--s4", "Other": "--s5" };
+  const BANDS = ["< £100k", "£100–200k", "£200–300k", "£300–400k", "£400–500k", "£500–750k", "£750k–1m", "£1m+"];
 
-  // ---- KPI tiles
-  const k = data.kpis[0];
-  const monthly = data.monthly;
-  const months = [...new Set(monthly.map((r) => r.month))].sort();
+  // Latest month / latest complete year
+  const months = [...new Set(D.monthly.map((r) => r.month.slice(0, 7)))].sort();
   const lastMonth = months[months.length - 1];
-  const lastRows = monthly.filter((r) => r.month === lastMonth);
-  const lastSales = lastRows.reduce((s, r) => s + r.sales, 0);
+  const fullYears = [...new Set(months.map((m) => +m.slice(0, 4)))].filter((y) => months.includes(`${y}-12`));
+  const allYears = [...new Set(D.districts.map((r) => +r.year))].sort((a, b) => a - b);
+  const fullYear = fullYears.length ? Math.max(...fullYears) : allYears[allYears.length - 1];
+  const yearly = has("yearly") ? D.yearly.map((r) => ({ ...r, year: +r.year })) : [];
+  const Y = (y) => yearly.find((r) => r.year === y);
+  const monthName = (ym) => new Date(ym + "-01T00:00:00Z").toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
+
+  // ---------------------------------------------------------------- header + badges
+  const k = D.kpis[0];
+  const firstYear = String(k.first_sale).slice(0, 4), lastYear = String(k.last_sale).slice(0, 4);
+  $("hero-title").textContent = `England & Wales house prices, ${firstYear}–${lastYear}`;
+  $("hero-sub").textContent =
+    `${compact(N(k.sales))} residential sales from ${meta.dataset_label}, processed by an orchestrated pipeline: ` +
+    `checksummed ingestion, PySpark change-data merge, Great Expectations, a dbt star schema and a PostgreSQL model.`;
   const q = meta.quality;
-  const tiles = [
-    ["Sales in warehouse", num.format(k.sales), `${k.first_sale} to ${k.last_sale}`],
-    ["Districts", num.format(k.districts), "local authority districts"],
-    [`Sales in ${lastMonth.slice(0, 7)}`, num.format(lastSales), "latest month; still filling in"],
-    ["Data quality", q ? (q.success ? "Passed" : "Failed") : "–",
-      q ? `${q.expectations_per_partition} checks × ${q.partitions} year partitions` : "not run"],
-  ];
-  document.getElementById("kpis").innerHTML = tiles.map(([l, v, s]) =>
-    `<div class="card kpi"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(s)}</div></div>`
-  ).join("");
+  const genDate = new Date(meta.generated_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  $("badges").innerHTML = [
+    meta.synthetic_fixture ? `<span class="badge">Synthetic fixture</span>` : `<span class="badge"><span class="dot"></span>Real data</span>`,
+    `<span class="badge">Sales to ${new Date(k.last_sale).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>`,
+    `<span class="badge">Built ${genDate}</span>`,
+    q ? `<span class="badge ${q.success ? "ok" : ""}">Data quality ${q.success ? "passed" : "failed"}</span>` : "",
+    meta.dbt ? `<span class="badge ok">dbt tests ${meta.dbt.tests_passed}/${meta.dbt.tests_total}</span>` : "",
+  ].join("");
 
-  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-  Chart.defaults.color = css("--text-secondary");
-  Chart.defaults.borderColor = css("--grid");
+  // ---------------------------------------------------------------- KPI tiles
+  const kpiDefs = [];
+  const yl = yearly.filter((r) => r.year <= fullYear);
+  const cur = Y(fullYear), prev = Y(fullYear - 1);
+  kpiDefs.push({ label: "Sales in warehouse", value: compact(N(k.sales)), meta: `${firstYear} – ${monthName(lastMonth)}`,
+                 spark: yl.map((r) => N(r.sales)) });
+  if (cur) {
+    const ch = prev ? N(cur.median_price_gbp) / N(prev.median_price_gbp) - 1 : null;
+    kpiDefs.push({ label: `Median price, ${fullYear}`, value: fmtGBP.format(N(cur.median_price_gbp)), delta: ch,
+                   meta: `vs ${fullYear - 1}`, spark: yl.map((r) => N(r.median_price_gbp)) });
+    const vch = prev ? N(cur.sales) / N(prev.sales) - 1 : null;
+    kpiDefs.push({ label: `Sales, ${fullYear}`, value: compact(N(cur.sales)), delta: vch, meta: "vs prior year",
+                   spark: yl.map((r) => N(r.sales)) });
+    const nb = N(cur.new_build_sales) / N(cur.sales), nbp = prev ? N(prev.new_build_sales) / N(prev.sales) : null;
+    kpiDefs.push({ label: `New-build share, ${fullYear}`, value: pct(nb), deltaPts: nbp == null ? null : nb - nbp,
+                   meta: "vs prior year; recent years fill in late", spark: yl.map((r) => N(r.new_build_sales) / N(r.sales)) });
+    const prem = N(cur.median_new_build_gbp) / N(cur.median_established_gbp) - 1;
+    kpiDefs.push({ label: `New-build premium, ${fullYear}`, value: signedPct(prem), meta: "median new vs established",
+                   spark: yl.map((r) => N(r.median_new_build_gbp) / N(r.median_established_gbp) - 1) });
+  }
+  kpiDefs.push({ label: "Districts covered", value: fmtInt.format(N(k.districts)), meta: "local authority districts" });
+  $("kpis").innerHTML = kpiDefs.map((d, i) => {
+    let delta = "";
+    if (d.delta != null && isFinite(d.delta)) delta = `<span class="delta ${d.delta >= 0 ? "up" : "down"}">${d.delta >= 0 ? "▲" : "▼"} ${signedPct(d.delta)}</span>`;
+    if (d.deltaPts != null && isFinite(d.deltaPts)) delta = `<span class="delta ${d.deltaPts >= 0 ? "up" : "down"}">${d.deltaPts >= 0 ? "▲" : "▼"} ${(d.deltaPts >= 0 ? "+" : "−") + Math.abs(d.deltaPts * 100).toFixed(1)} pts</span>`;
+    return `<div class="kpi"><div class="label">${esc(d.label)}</div><div class="value">${esc(d.value)}</div>
+      <div class="meta">${delta}<span>${esc(d.meta || "")}</span></div>${d.spark && d.spark.length > 1 ? `<canvas id="spark-${i}" aria-hidden="true"></canvas>` : ""}</div>`;
+  }).join("");
 
-  // ---- Monthly median by type (fixed slot order = fixed colour per type)
-  const TYPES = ["Detached", "Semi-detached", "Terraced", "Flat/maisonette"];
-  const COLORS = ["--series-1", "--series-2", "--series-3", "--series-4"].map(css);
-  const byKey = new Map(monthly.map((r) => [r.month + "|" + r.property_type, r]));
-  new Chart(document.getElementById("monthly-chart"), {
-    type: "line",
-    data: {
-      labels: months.map((m) => m.slice(0, 7)),
-      datasets: TYPES.map((t, i) => ({
-        label: t,
-        data: months.map((m) => byKey.get(m + "|" + t)?.median_price_gbp ?? null),
-        borderColor: COLORS[i], backgroundColor: COLORS[i],
-        borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.2, spanGaps: true,
-      })),
+  // ---------------------------------------------------------------- state for interactive bits
+  let range = 0;
+  document.querySelectorAll("#range-seg button").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#range-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    range = +b.dataset.range; drawPrice();
+  }));
+  const fillYears = (el, years, sel) => { el.innerHTML = years.map((y) => `<option value="${y}">${y}${months.includes(`${y}-12`) ? "" : " (part)"}</option>`).join(""); el.value = sel; };
+  fillYears($("region-year"), allYears, fullYear);
+  fillYears($("explorer-year"), allYears, fullYear);
+  const bandYears = has("price_bands") ? [...new Set(D.price_bands.map((r) => +r.year))].sort() : [];
+  fillYears($("band-year"), bandYears, fullYear);
+  $("region-year").addEventListener("change", () => { drawRegions(); drawCounties(); });
+  $("band-year").addEventListener("change", drawBands);
+
+  // ---------------------------------------------------------------- Chart.js setup
+  const charts = {};
+  function make(id, cfg) {
+    if (charts[id]) charts[id].destroy();
+    const el = $(id); if (!el) return;
+    charts[id] = new Chart(el, cfg);
+  }
+  function emptyChart(id, msg) {
+    const el = $(id); if (!el) return;
+    el.parentElement.innerHTML = `<div class="empty">${esc(msg)}</div>`;
+  }
+  const baseOpts = () => ({
+    maintainAspectRatio: false, animation: { duration: 300 },
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { position: "top", align: "start", labels: { usePointStyle: true, pointStyle: "circle", boxWidth: 7, boxHeight: 7, padding: 14, color: css("--ink-2") } },
+      tooltip: { backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: css("--ink-2"), borderColor: css("--border"),
+                 borderWidth: 1, padding: 10, boxPadding: 4, usePointStyle: true, titleFont: { weight: "600" } },
     },
-    options: {
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { position: "top", align: "start", labels: { usePointStyle: true, boxWidth: 8 } },
-        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.raw == null ? "–" : gbp.format(c.raw)}` } },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
-        y: { ticks: { callback: (v) => "£" + v / 1000 + "k" } },
-      },
+    scales: {
+      x: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--muted"), maxRotation: 0, autoSkipPadding: 14 } },
+      y: { grid: { color: css("--grid") }, border: { display: false }, ticks: { color: css("--muted"), padding: 6 } },
     },
   });
-  document.getElementById("monthly-table").innerHTML =
-    "<table><thead><tr><th>Month</th><th>Type</th><th class=num>Sales</th><th class=num>Median</th></tr></thead><tbody>" +
-    monthly.filter((r) => TYPES.includes(r.property_type)).slice(-48).reverse().map((r) =>
-      `<tr><td>${esc(r.month.slice(0, 7))}</td><td>${esc(r.property_type)}</td><td class=num>${num.format(r.sales)}</td><td class=num>${gbp.format(r.median_price_gbp)}</td></tr>`
-    ).join("") + "</tbody></table>";
+  const merge = (a, b) => { for (const k of Object.keys(b)) a[k] = (b[k] && typeof b[k] === "object" && !Array.isArray(b[k]) && a[k]) ? merge(a[k], b[k]) : b[k]; return a; };
 
-  // ---- Districts: top 10 by median for the chosen year (single series, one hue)
-  const years = [...new Set(data.districts.map((r) => r.year))].sort();
-  const sel = document.getElementById("year-select");
-  sel.innerHTML = years.map((y) => `<option>${y}</option>`).join("");
-  // default to the last COMPLETE year when the latest one is partial
-  sel.value = years.length > 1 ? years[years.length - 2] : years[0];
-  let districtChart;
-  function drawDistricts() {
-    const y = Number(sel.value);
-    const rows = data.districts.filter((r) => r.year === y)
-      .sort((a, b) => b.median_price_gbp - a.median_price_gbp).slice(0, 10);
-    const cfg = {
-      type: "bar",
-      data: {
-        labels: rows.map((r) => r.district),
-        datasets: [{ label: "Median price", data: rows.map((r) => r.median_price_gbp),
-          backgroundColor: css("--series-1"), borderRadius: 4, borderSkipped: "start", barPercentage: 0.7 }],
-      },
-      options: {
-        indexAxis: "y", maintainAspectRatio: false,
-        plugins: { legend: { display: false },
-          tooltip: { callbacks: { label: (c) => ` ${gbp.format(c.raw)} · ${num.format(rows[c.dataIndex].sales)} sales · YoY ${pct(rows[c.dataIndex].median_yoy_change)}` } } },
-        scales: { x: { ticks: { callback: (v) => "£" + v / 1000 + "k" } }, y: { grid: { display: false } } },
-      },
-    };
-    if (districtChart) districtChart.destroy();
-    districtChart = new Chart(document.getElementById("district-chart"), cfg);
-    document.getElementById("district-table").innerHTML =
-      "<table><thead><tr><th>District</th><th class=num>Sales</th><th class=num>Median</th><th class=num>YoY</th></tr></thead><tbody>" +
-      rows.map((r) => `<tr><td>${esc(r.district)}</td><td class=num>${num.format(r.sales)}</td><td class=num>${gbp.format(r.median_price_gbp)}</td><td class=num>${pct(r.median_yoy_change)}</td></tr>`).join("") +
+  function sparklines() {
+    kpiDefs.forEach((d, i) => {
+      if (!$(`spark-${i}`)) return;
+      make(`spark-${i}`, {
+        type: "line",
+        data: { labels: d.spark.map((_, j) => j), datasets: [{ data: d.spark, borderColor: css("--accent"), borderWidth: 2, pointRadius: 0, tension: .3,
+          fill: true, backgroundColor: css("--accent-soft") }] },
+        options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                   scales: { x: { display: false }, y: { display: false } }, events: [] },
+      });
+    });
+  }
+
+  // ---- price by type
+  const priceKey = new Map(D.monthly.map((r) => [r.month.slice(0, 7) + "|" + r.property_type, r]));
+  const PRICE_TYPES = TYPES.filter((t) => t !== "Other");
+  function drawPrice() {
+    const ms = range ? months.slice(-range) : months;
+    make("c-price", {
+      type: "line",
+      data: { labels: ms.map(monthName), datasets: PRICE_TYPES.map((t) => ({
+        label: t, data: ms.map((m) => N(priceKey.get(m + "|" + t)?.median_price_gbp)),
+        borderColor: css(TYPE_VAR[t]), backgroundColor: css(TYPE_VAR[t]), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+        pointHoverBorderWidth: 2, pointHoverBorderColor: css("--surface"), tension: .25, spanGaps: true })) },
+      options: merge(baseOpts(), {
+        plugins: { tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.raw == null ? "–" : fmtGBP.format(c.raw)}` } } },
+        scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { ticks: { callback: (v) => gbpK(v) } } },
+      }),
+    });
+    $("t-price").innerHTML = "<table><thead><tr><th>Month</th>" + PRICE_TYPES.map((t) => `<th class="r">${t}</th>`).join("") + "</tr></thead><tbody>" +
+      [...ms].reverse().map((m) => `<tr><td>${monthName(m)}</td>` + PRICE_TYPES.map((t) => {
+        const v = N(priceKey.get(m + "|" + t)?.median_price_gbp); return `<td class="r">${v == null ? "–" : fmtGBP.format(v)}</td>`; }).join("") + "</tr>").join("") +
       "</tbody></table>";
   }
-  sel.addEventListener("change", drawDistricts);
-  drawDistricts();
 
-  // ---- Run metadata
-  document.getElementById("run-meta").textContent =
-    `Generated ${meta.generated_at} · data quality ${q ? (q.success ? "passed" : "FAILED") : "not run"}` +
-    (q ? ` on ${num.format(q.rows_validated)} rows` : "");
-  document.getElementById("files-table").innerHTML =
-    "<table><thead><tr><th>Source file</th><th>Kind</th><th class=num>Size</th><th>SHA-256</th><th>Landed</th></tr></thead><tbody>" +
-    meta.source_files.map((f) => `<tr><td>${esc(f.name)}</td><td>${esc(f.kind)}</td><td class=num>${(f.bytes / 1e6).toFixed(1)} MB</td><td><code>${esc(f.sha256)}</code></td><td>${esc(f.landed_at)}</td></tr>`).join("") +
+  // ---- new build vs established
+  function drawNewBuild() {
+    if (!yearly.length) return emptyChart("c-newbuild", "Appears after the next dashboard export.");
+    make("c-newbuild", {
+      type: "line",
+      data: { labels: yearly.map((r) => r.year + (r.year > fullYear ? "*" : "")), datasets: [
+        { label: "New build", data: yearly.map((r) => N(r.median_new_build_gbp)), borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2, pointRadius: 3, tension: .2 },
+        { label: "Established", data: yearly.map((r) => N(r.median_established_gbp)), borderColor: css("--s2"), backgroundColor: css("--s2"), borderWidth: 2, pointRadius: 3, tension: .2 },
+      ] },
+      options: merge(baseOpts(), {
+        plugins: { tooltip: { callbacks: {
+          label: (c) => ` ${c.dataset.label}: ${fmtGBP.format(c.raw)}`,
+          footer: (items) => { const r = yearly[items[0].dataIndex]; return "Premium: " + signedPct(N(r.median_new_build_gbp) / N(r.median_established_gbp) - 1); } } } },
+        scales: { y: { ticks: { callback: (v) => gbpK(v) } } },
+      }),
+    });
+    $("n-newbuild").textContent = yearly.some((r) => r.year > fullYear) ? `* ${yearly[yearly.length - 1].year} is a part year.` : "";
+  }
+
+  // ---- price bands
+  function drawBands() {
+    if (!has("price_bands")) return emptyChart("c-bands", "Appears after the next dashboard export.");
+    const y = +$("band-year").value;
+    const rows = D.price_bands.filter((r) => +r.year === y);
+    const total = rows.reduce((s, r) => s + N(r.sales), 0);
+    const vals = BANDS.map((_, i) => N(rows.find((r) => +r.band === i + 1)?.sales) || 0);
+    make("c-bands", {
+      type: "bar",
+      data: { labels: BANDS, datasets: [{ label: "Share of sales", data: vals.map((v) => v / total), backgroundColor: css("--s1"),
+        borderRadius: 4, borderSkipped: "start", maxBarThickness: 44 }] },
+      options: merge(baseOpts(), {
+        interaction: { mode: "nearest", intersect: true },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${pct(c.raw)} · ${fmtInt.format(vals[c.dataIndex])} sales` } } },
+        scales: { x: { ticks: { autoSkip: false, font: { size: 11 } } }, y: { ticks: { callback: (v) => Math.round(v * 100) + "%" } } },
+      }),
+    });
+  }
+
+  // ---- annual median
+  function drawAnnual() {
+    if (!yearly.length) return emptyChart("c-annual", "Appears after the next dashboard export.");
+    const vals = yearly.map((r) => N(r.median_price_gbp));
+    make("c-annual", {
+      type: "bar",
+      data: { labels: yearly.map((r) => r.year + (r.year > fullYear ? "*" : "")), datasets: [{ label: "Median price", data: vals,
+        backgroundColor: yearly.map((r) => r.year > fullYear ? css("--neutral") : css("--s1")), borderRadius: 4, borderSkipped: "start", maxBarThickness: 48 }] },
+      options: merge(baseOpts(), {
+        interaction: { mode: "nearest", intersect: true },
+        plugins: { legend: { display: false }, tooltip: { callbacks: {
+          label: (c) => ` ${fmtGBP.format(c.raw)}`,
+          footer: (items) => { const i = items[0].dataIndex; return i ? "vs prior year: " + signedPct(vals[i] / vals[i - 1] - 1) : ""; } } } },
+        scales: { y: { ticks: { callback: (v) => gbpK(v) } } },
+      }),
+    });
+  }
+
+  // ---- monthly volume (stacked A + B)
+  function drawVolume() {
+    const rows = has("monthly_volume") ? D.monthly_volume.map((r) => ({ m: r.month.slice(0, 7), all: N(r.sales), b: N(r.category_b_sales) }))
+      : months.map((m) => ({ m, all: D.monthly.filter((r) => r.month.startsWith(m)).reduce((s, r) => s + N(r.sales), 0), b: null }));
+    const labels = rows.map((r) => monthName(r.m));
+    const provisional = (i) => i >= rows.length - 3;
+    const ds = [{ label: "Standard (A)", data: rows.map((r) => r.b == null ? r.all : r.all - r.b), backgroundColor: rows.map((_, i) => provisional(i) ? css("--neutral") : css("--s1")), stack: "s", borderRadius: 0 }];
+    if (rows[0]?.b != null) ds.push({ label: "Additional (B)", data: rows.map((r) => r.b), backgroundColor: rows.map((_, i) => provisional(i) ? css("--axis") : css("--s2")), stack: "s", borderRadius: { topLeft: 3, topRight: 3 } });
+    make("c-volume", {
+      type: "bar", data: { labels, datasets: ds },
+      options: merge(baseOpts(), {
+        datasets: { bar: { categoryPercentage: .9, barPercentage: .9, borderSkipped: "start" } },
+        plugins: { tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtInt.format(c.raw)}`,
+          footer: (items) => provisional(items[0].dataIndex) ? "Provisional: still filling in" : "" } } },
+        scales: { x: { stacked: true, ticks: { maxTicksLimit: 9 } }, y: { stacked: true, ticks: { callback: (v) => compact(v) } } },
+      }),
+    });
+  }
+
+  // ---- property mix (100% stacked)
+  function drawMix() {
+    let rows;
+    if (has("type_year")) rows = D.type_year.map((r) => ({ y: +r.year, t: r.property_type, n: N(r.sales) }));
+    else rows = D.monthly.map((r) => ({ y: +r.month.slice(0, 4), t: r.property_type, n: N(r.sales) }));
+    const years = [...new Set(rows.map((r) => r.y))].sort();
+    const tot = (y) => rows.filter((r) => r.y === y).reduce((s, r) => s + r.n, 0);
+    const totals = Object.fromEntries(years.map((y) => [y, tot(y)]));
+    const types = TYPES.filter((t) => rows.some((r) => r.t === t));
+    make("c-mix", {
+      type: "bar",
+      data: { labels: years.map((y) => y + (y > fullYear ? "*" : "")), datasets: types.map((t, i) => ({
+        label: t, data: years.map((y) => rows.filter((r) => r.y === y && r.t === t).reduce((s, r) => s + r.n, 0) / totals[y]),
+        backgroundColor: css(TYPE_VAR[t]), borderColor: css("--surface"), borderWidth: { top: 2 }, borderSkipped: false, stack: "m" })) },
+      options: merge(baseOpts(), {
+        datasets: { bar: { categoryPercentage: .8, barPercentage: .85 } },
+        plugins: { legend: { labels: { padding: 10 } }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${pct(c.raw)}` } } },
+        scales: { x: { stacked: true }, y: { stacked: true, max: 1, ticks: { callback: (v) => Math.round(v * 100) + "%" } } },
+      }),
+    });
+  }
+
+  // ---- new-build and leasehold share
+  function drawShare() {
+    if (!yearly.length) return emptyChart("c-share", "Appears after the next dashboard export.");
+    make("c-share", {
+      type: "line",
+      data: { labels: yearly.map((r) => r.year + (r.year > fullYear ? "*" : "")), datasets: [
+        { label: "Leasehold", data: yearly.map((r) => N(r.leasehold_sales) / N(r.sales)), borderColor: css("--s3"), backgroundColor: css("--s3"), borderWidth: 2, pointRadius: 3, tension: .2 },
+        { label: "New build", data: yearly.map((r) => N(r.new_build_sales) / N(r.sales)), borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2, pointRadius: 3, tension: .2 },
+      ] },
+      options: merge(baseOpts(), {
+        plugins: { tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${pct(c.raw)}` } } },
+        scales: { y: { min: 0, ticks: { callback: (v) => Math.round(v * 100) + "%" } } },
+      }),
+    });
+  }
+
+  // ---- sales by type
+  function drawType() {
+    const rows = TYPES.map((t) => ({ t, n: N(D.by_type.find((r) => r.property_type === t)?.sales) || 0 }));
+    const total = rows.reduce((s, r) => s + r.n, 0);
+    make("c-type", {
+      type: "bar",
+      data: { labels: rows.map((r) => r.t), datasets: [{ label: "Sales", data: rows.map((r) => r.n),
+        backgroundColor: rows.map((r) => css(TYPE_VAR[r.t])), borderRadius: 4, borderSkipped: "start", barPercentage: .7 }] },
+      options: merge(baseOpts(), {
+        indexAxis: "y", interaction: { mode: "nearest", intersect: true, axis: "y" },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${fmtInt.format(c.raw)} sales · ${pct(c.raw / total)}` } } },
+        scales: { x: { grid: { color: css("--grid") }, ticks: { callback: (v) => compact(v) } }, y: { grid: { display: false } } },
+      }),
+    });
+  }
+
+  // ---- regions: top districts + movers + postcode areas
+  function hbar(id, rows, color, label, fmt, tip) {
+    make(id, {
+      type: "bar",
+      data: { labels: rows.map((r) => r.label), datasets: [{ label, data: rows.map((r) => r.v),
+        backgroundColor: Array.isArray(color) ? color : color, borderRadius: 4, borderSkipped: "start", barPercentage: .72 }] },
+      options: merge(baseOpts(), {
+        indexAxis: "y", interaction: { mode: "nearest", intersect: true, axis: "y" },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: tip } } },
+        scales: { x: { grid: { color: css("--grid") }, ticks: { callback: fmt } }, y: { grid: { display: false }, ticks: { color: css("--ink-2"), font: { size: 11.5 } } } },
+      }),
+    });
+  }
+  function drawRegions() {
+    const y = +$("region-year").value;
+    const rows = D.districts.filter((r) => +r.year === y);
+    const top = [...rows].sort((a, b) => N(b.median_price_gbp) - N(a.median_price_gbp)).slice(0, 10);
+    hbar("c-top", top.map((r) => ({ label: title(r.district), v: N(r.median_price_gbp), r })), css("--s1"), "Median price",
+      (v) => gbpK(v), (c) => { const r = top[c.dataIndex]; return [` ${fmtGBP.format(c.raw)}`, ` ${fmtInt.format(N(r.sales))} sales · YoY ${signedPct(N(r.median_yoy_change))}`]; });
+
+    // movers: only districts with enough sales for a stable median
+    const sizes = rows.map((r) => N(r.sales)).sort((a, b) => a - b);
+    const minSales = Math.max(20, Math.min(500, sizes[Math.floor(sizes.length * 0.25)] || 0));
+    const valid = rows.filter((r) => N(r.median_yoy_change) != null && N(r.sales) >= minSales);
+    $("movers-sub").textContent = `Year-on-year change in district median, ${y} vs ${y - 1} (districts with ≥ ${fmtInt.format(minSales)} sales)`;
+    if (!valid.length) { make("c-movers", { type: "bar", data: { labels: [], datasets: [] }, options: baseOpts() }); return; }
+    const sorted = [...valid].sort((a, b) => N(b.median_yoy_change) - N(a.median_yoy_change));
+    const n = Math.min(6, Math.floor(sorted.length / 2));
+    const movers = [...sorted.slice(0, n), ...sorted.slice(-n)];
+    hbar("c-movers", movers.map((r) => ({ label: title(r.district), v: N(r.median_yoy_change) })),
+      movers.map((r) => N(r.median_yoy_change) >= 0 ? css("--div-pos") : css("--div-neg")), "YoY change",
+      (v) => (v >= 0 ? "+" : "") + Math.round(v * 100) + "%",
+      (c) => { const r = movers[c.dataIndex]; return [` ${signedPct(c.raw)}`, ` Median ${fmtGBP.format(N(r.median_price_gbp))} · ${fmtInt.format(N(r.sales))} sales`]; });
+
+    // postcode areas
+    if (!has("postcode_areas")) return emptyChart("c-areas", "Appears after the next dashboard export.");
+    const areas = D.postcode_areas.filter((r) => +r.year === y && N(r.sales) >= 100 || (+r.year === y && meta.synthetic_fixture))
+      .sort((a, b) => N(b.median_price_gbp) - N(a.median_price_gbp)).slice(0, 15);
+    hbar("c-areas", areas.map((r) => ({ label: r.postcode_area, v: N(r.median_price_gbp) })), css("--s3"), "Median price",
+      (v) => gbpK(v), (c) => { const r = areas[c.dataIndex]; return [` ${fmtGBP.format(c.raw)}`, ` ${fmtInt.format(N(r.sales))} sales`]; });
+  }
+
+  // ---- county table (sortable, filterable)
+  let countySort = { key: "median", dir: -1 };
+  function drawCounties() {
+    const el = $("t-county");
+    if (!has("county_year")) { el.innerHTML = '<div class="empty">Appears after the next dashboard export.</div>'; return; }
+    const y = +$("region-year").value;
+    const prevMap = new Map(D.county_year.filter((r) => +r.year === y - 1).map((r) => [r.county, N(r.median_price_gbp)]));
+    const f = $("county-search").value.trim().toLowerCase();
+    let rows = D.county_year.filter((r) => +r.year === y && r.county.toLowerCase().includes(f)).map((r) => ({
+      county: r.county, sales: N(r.sales), median: N(r.median_price_gbp),
+      yoy: prevMap.has(r.county) ? N(r.median_price_gbp) / prevMap.get(r.county) - 1 : null }));
+    const maxMed = Math.max(...rows.map((r) => r.median), 1);
+    rows.sort((a, b) => { const k = countySort.key; const av = a[k], bv = b[k];
+      if (typeof av === "string") return av.localeCompare(bv) * countySort.dir; return ((av ?? -Infinity) - (bv ?? -Infinity)) * countySort.dir; });
+    const th = (k, label, cls = "") => `<th class="sortable ${cls}" data-k="${k}">${label} <span class="arrow">${countySort.key === k ? (countySort.dir > 0 ? "▲" : "▼") : ""}</span></th>`;
+    el.innerHTML = `<table><thead><tr>${th("county", "County")}${th("median", "Median price", "r")}<th aria-hidden="true"></th>${th("yoy", "YoY", "r")}${th("sales", "Sales", "r")}</tr></thead><tbody>` +
+      rows.map((r) => `<tr><td>${esc(title(r.county))}</td><td class="r">${fmtGBP.format(r.median)}</td>
+        <td class="bar-cell"><span class="bar" style="width:${Math.round(100 * r.median / maxMed)}px"></span></td>
+        <td class="r"><span class="delta ${r.yoy == null ? "" : r.yoy >= 0 ? "up" : "down"}">${signedPct(r.yoy)}</span></td>
+        <td class="r">${fmtInt.format(r.sales)}</td></tr>`).join("") + "</tbody></table>";
+    el.querySelectorAll("th.sortable").forEach((h) => h.addEventListener("click", () => {
+      const k = h.dataset.k; countySort = { key: k, dir: countySort.key === k ? -countySort.dir : (k === "county" ? 1 : -1) }; drawCounties(); }));
+  }
+  $("county-search").addEventListener("input", drawCounties);
+
+  // ---- district explorer
+  let dSort = { key: "median_price_gbp", dir: -1 }, page = 0;
+  const PAGE = 25;
+  function drawExplorer() {
+    const y = +$("explorer-year").value;
+    const f = $("district-search").value.trim().toLowerCase();
+    let rows = D.districts.filter((r) => +r.year === y && (r.district.toLowerCase().includes(f) || r.county.toLowerCase().includes(f)));
+    rows.sort((a, b) => { const k = dSort.key; const av = k === "district" || k === "county" ? a[k] : N(a[k]), bv = k === "district" || k === "county" ? b[k] : N(b[k]);
+      if (typeof av === "string") return av.localeCompare(bv) * dSort.dir; return ((av ?? -Infinity) - (bv ?? -Infinity)) * dSort.dir; });
+    const pages = Math.max(1, Math.ceil(rows.length / PAGE)); page = Math.min(page, pages - 1);
+    const slice = rows.slice(page * PAGE, page * PAGE + PAGE);
+    const th = (k, label, cls = "") => `<th class="sortable ${cls}" data-k="${k}">${label} <span class="arrow">${dSort.key === k ? (dSort.dir > 0 ? "▲" : "▼") : ""}</span></th>`;
+    $("t-district").innerHTML = `<table><thead><tr>${th("price_rank_in_year", "Rank", "r")}${th("district", "District")}${th("county", "County")}${th("median_price_gbp", "Median price", "r")}${th("median_yoy_change", "YoY", "r")}${th("sales", "Sales", "r")}</tr></thead><tbody>` +
+      (slice.length ? slice.map((r) => { const yoy = N(r.median_yoy_change);
+        return `<tr><td class="r">${N(r.price_rank_in_year)}</td><td>${esc(title(r.district))}</td><td>${esc(title(r.county))}</td>
+          <td class="r">${fmtGBP.format(N(r.median_price_gbp))}</td>
+          <td class="r"><span class="delta ${yoy == null ? "" : yoy >= 0 ? "up" : "down"}">${signedPct(yoy)}</span></td>
+          <td class="r">${fmtInt.format(N(r.sales))}</td></tr>`; }).join("") : `<tr><td colspan="6" class="empty">No districts match.</td></tr>`) + "</tbody></table>";
+    $("t-district").querySelectorAll("th.sortable").forEach((h) => h.addEventListener("click", () => {
+      const k = h.dataset.k; dSort = { key: k, dir: dSort.key === k ? -dSort.dir : (k === "district" || k === "county" || k === "price_rank_in_year" ? 1 : -1) }; page = 0; drawExplorer(); }));
+    $("explorer-count").textContent = `${fmtInt.format(rows.length)} districts`;
+    $("pager-info").textContent = rows.length ? `${page * PAGE + 1}–${Math.min(rows.length, page * PAGE + PAGE)} of ${fmtInt.format(rows.length)}` : "";
+    $("prev").disabled = page === 0; $("next").disabled = page >= pages - 1;
+  }
+  $("district-search").addEventListener("input", () => { page = 0; drawExplorer(); });
+  $("explorer-year").addEventListener("change", () => { page = 0; drawExplorer(); });
+  $("prev").addEventListener("click", () => { page--; drawExplorer(); });
+  $("next").addEventListener("click", () => { page++; drawExplorer(); });
+
+  // ---------------------------------------------------------------- pipeline & quality
+  const raw = meta.raw_validation, dbt = meta.dbt;
+  const totalBytes = meta.source_files.reduce((s, f) => s + N(f.bytes), 0);
+  const stages = [
+    ["Ingest", "HTTP download, SHA-256 manifest, retries", `${meta.source_files.length} files · ${(totalBytes / 1e9).toFixed(2)} GB`],
+    ["Validate", "pandera schema on raw CSV", raw ? `${compact(raw.rows)} rows · ${fmtInt.format(raw.failing_rows)} failing` : ""],
+    ["Transform", "PySpark bronze → silver, A/C/D merge", `${compact(N(k.sales))} current sales`],
+    ["Quality", "Great Expectations per year", q ? `${q.expectations_per_partition} checks × ${q.partitions} years` : ""],
+    ["Model", "dbt star schema + tests", dbt ? `${dbt.models} models · ${dbt.tests_passed}/${dbt.tests_total} tests` : ""],
+    ["Serve", "PostgreSQL 3NF · this dashboard", ""],
+  ];
+  $("flow").innerHTML = stages.map(([t, d, v], i) =>
+    `${i ? '<div class="arrow-sep" aria-hidden="true">→</div>' : ""}<div class="stage"><div class="t">${t}</div><div class="d">${d}</div>${v ? `<div class="v">${esc(v)}</div>` : ""}</div>`).join("");
+  const stat = (k2, v, s, ok) => `<div class="stat"><div class="k">${k2}</div><div class="v">${v}</div><div class="s">${ok == null ? "" : `<span class="pill ${ok ? "ok" : "bad"}">${ok ? "Pass" : "Fail"}</span> `}${s}</div></div>`;
+  $("quality-stats").innerHTML = [
+    raw ? stat("Raw rows validated", compact(raw.rows), `${fmtInt.format(raw.failing_rows)} failing rows`, raw.failing_rows === 0) : "",
+    q ? stat("Great Expectations", `${q.expectations_per_partition * q.partitions}`, `checks on ${compact(q.rows_validated)} rows`, q.success) : "",
+    dbt ? stat("dbt tests", `${dbt.tests_passed}/${dbt.tests_total}`, "keys, relationships, reconciliation", dbt.tests_passed === dbt.tests_total) : "",
+    stat("Districts", fmtInt.format(N(k.districts)), "local authority districts", null),
+  ].join("");
+  $("run-meta").textContent = `Last built ${new Date(meta.generated_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}`;
+  $("t-files").innerHTML = "<table><thead><tr><th>File</th><th>Kind</th><th class='r'>Size</th><th>SHA-256</th><th>Landed</th></tr></thead><tbody>" +
+    meta.source_files.map((f) => `<tr><td class="mono">${esc(f.name)}</td><td>${esc(f.kind)}</td><td class="r">${(N(f.bytes) / 1e6).toFixed(1)} MB</td>
+      <td class="mono">${esc(f.sha256)}</td><td>${esc(new Date(f.landed_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}</td></tr>`).join("") +
     "</tbody></table>";
+
+  // ---------------------------------------------------------------- render
+  function renderCharts() {
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+    Chart.defaults.color = css("--ink-2");
+    sparklines(); drawPrice(); drawNewBuild(); drawBands(); drawAnnual();
+    drawVolume(); drawMix(); drawShare(); drawType(); drawRegions();
+  }
+  renderCharts(); drawCounties(); drawExplorer();
 })();
 </script>
 </body>

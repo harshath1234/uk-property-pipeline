@@ -1,0 +1,26 @@
+-- 01_repeat_sales_growth.sql | PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) | ppd.sale rows: 8,551,939 | wall time 25.11s
+GroupAggregate  (cost=1285927.59..1393083.27 rows=2255 width=76) (actual time=19202.892..25088.075 rows=8 loops=1)
+  Group Key: ((EXTRACT(year FROM ordered.sale_date))::integer)
+  Buffers: shared hit=7039026 read=1539841 written=47, temp read=3322 written=3339
+  ->  Sort  (cost=1285927.59..1291876.92 rows=2379734 width=20) (actual time=19108.103..19168.505 rows=824251 loops=1)
+        Sort Key: ((EXTRACT(year FROM ordered.sale_date))::integer)
+        Sort Method: external merge  Disk: 24264kB
+        Buffers: shared hit=7039026 read=1539833 written=47, temp read=3033 written=3047
+        ->  Subquery Scan on ordered  (cost=0.43..936277.57 rows=2379734 width=20) (actual time=156.339..18923.433 rows=824251 loops=1)
+              Filter: ((ordered.prev_date IS NOT NULL) AND ((ordered.sale_date - ordered.prev_date) >= 365))
+              Rows Removed by Filter: 6332969
+              Buffers: shared hit=7039023 read=1539833 written=47
+              ->  WindowAgg  (cost=0.43..816752.75 rows=7175077 width=24) (actual time=156.045..18501.441 rows=7157220 loops=1)
+                    Buffers: shared hit=7039023 read=1539833 written=47
+                    ->  Index Scan using sale_property_date_idx on sale s  (cost=0.43..673251.21 rows=7175077 width=16) (actual time=155.977..16002.267 rows=7157220 loops=1)
+                          Filter: (ppd_category = 'A'::bpchar)
+                          Rows Removed by Filter: 1394719
+                          Buffers: shared hit=7039023 read=1539833 written=47
+Planning:
+  Buffers: shared hit=62 read=8 dirtied=1
+Planning Time: 2.261 ms
+JIT:
+  Functions: 20
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+  Timing: Generation 1.162 ms, Inlining 68.001 ms, Optimization 46.473 ms, Emission 40.462 ms, Total 156.098 ms
+Execution Time: 25091.319 ms
